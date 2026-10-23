@@ -628,7 +628,7 @@ onUnmounted(() => {
         <div class="bg-white/90 dark:bg-white/10 backdrop-blur-xl rounded-xl md:rounded-2xl border border-slate-200/70 dark:border-white/10 px-3 md:px-6 py-3 md:py-4 shadow-lg shadow-slate-200/30 dark:shadow-black/20 transition-all duration-500">
           <div class="flex items-center justify-between gap-2 md:gap-4">
             <!-- 左侧：汉堡菜单 + 标题 -->
-            <div class="flex items-center space-x-3">
+            <div class="flex min-w-0 items-center space-x-3">
               <!-- 汉堡菜单按钮 (仅移动端) -->
               <button 
                 v-if="isMobile"
@@ -641,7 +641,7 @@ onUnmounted(() => {
                 <h2 class="text-lg md:text-2xl font-bold text-slate-900 dark:text-white truncate">
                   {{ t(menuItems.find(m => m.id === activeMenu)?.labelKey) }}
                 </h2>
-                <p class="text-slate-500 dark:text-white/50 text-xs md:text-sm mt-0.5 md:mt-1 hidden sm:block">{{ t('header.realtimeMonitor') }}</p>
+                <p v-if="activeMenu !== 'wifi'" class="text-slate-500 dark:text-white/50 text-xs md:text-sm mt-0.5 md:mt-1 hidden sm:block">{{ t('header.realtimeMonitor') }}</p>
               </div>
             </div>
             <!-- 右侧：状态信息 -->
@@ -669,6 +669,7 @@ onUnmounted(() => {
               </button>
               <!-- 刷新按钮 -->
               <button 
+                v-if="activeMenu !== 'wifi'"
                 @click="fetchSystemInfo"
                 :disabled="loading"
                 class="w-9 h-9 md:w-10 md:h-10 rounded-lg md:rounded-xl bg-slate-200 dark:bg-white/10 hover:bg-slate-300 dark:hover:bg-white/20 transition-colors flex items-center justify-center"
