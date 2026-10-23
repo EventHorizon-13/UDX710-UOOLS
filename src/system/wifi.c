@@ -247,7 +247,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
   char *ssid = mg_json_get_str(hm->body, "$.ssid");
   char *password = mg_json_get_str(hm->body, "$.password");
   double chnum = 0;
-  int hidden_value = 0;
+  bool hidden_value = false;
   int change_channel = mg_json_get_num(hm->body, "$.channel", &chnum);
   int change_hidden = mg_json_get_bool(hm->body, "$.hidden", &hidden_value);
   int change_ssid = ssid && ssid[0];
@@ -318,7 +318,8 @@ done:
 
 static void handle_wifi_control(struct mg_connection *c, struct mg_http_message *hm) {
   char *band = mg_json_get_str(hm->body, "$.band");
-  int enabled = -1, value = 0;
+  int enabled = -1;
+  bool value = false;
   if (mg_json_get_bool(hm->body, "$.enabled", &value)) enabled = value;
   if (!band || (strcmp(band, "2g") && strcmp(band, "5g")) || enabled < 0) {
     free(band); HTTP_ERROR(c, 400, "band must be 2g or 5g and enabled must be boolean"); return;

@@ -213,7 +213,8 @@ static void lan_status(struct mg_connection *c) {
         json_arr_add_str(j,ip); g_hash_table_add(seen,g_strdup(ip));
       }
     }
-    if (f) fclose(f); free(line); g_hash_table_destroy(seen); json_arr_close(j);
+    if (f) fclose(f);
+    free(line); g_hash_table_destroy(seen); json_arr_close(j);
   }
   json_obj_close(j); json_obj_close(j); HTTP_OK_FREE(c,json_finish(j));
 }
@@ -223,7 +224,7 @@ static void lan_save(struct mg_connection *c, struct mg_http_message *hm) {
   LanConfig old, next, actual;
   char *start = mg_json_get_str(hm->body,"$.pool_start"), *end = mg_json_get_str(hm->body,"$.pool_end");
   char *version = mg_json_get_str(hm->body,"$.version");
-  int confirm = 0, validate = 0;
+  bool confirm = false, validate = false;
   mg_json_get_bool(hm->body,"$.confirm",&confirm); mg_json_get_bool(hm->body,"$.validate_only",&validate);
   if (!read_live(&old)) { HTTP_ERROR(c,503,"CW52 ConnMan DHCP interface unavailable"); goto done; }
   next = old;
