@@ -14,6 +14,7 @@
 #include "http_utils.h"
 #include "json_builder.h"
 #include "wifi.h"
+#include "wifi_clients.h"
 
 #define HOSTAPD_CLI "/usr/sbin/hostapd_cli"
 #define HOSTAPD_CTRL "/var/run/hostapd"
@@ -25,7 +26,7 @@ static pthread_mutex_t wifi_config_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 typedef struct {
   const char *band, *iface, *conf;
-  char state[32], ssid[128], channel[16], clients[4096];
+  char state[32], ssid[128], channel[16];
   int available, hidden;
 } WifiBand;
 
@@ -69,13 +70,11 @@ static void parse_status(WifiBand *band, const char *status) {
 }
 
 static int read_band(WifiBand *band) {
-  char status[4096] = {0}, clients[4096] = {0}, hidden[32] = {0};
+  char status[4096] = {0}, hidden[32] = {0};
   band->available = 0;
   if (run_hostapd(band->iface, "status", status, sizeof(status)) || strstr(status, "FAIL")) return -1;
   parse_status(band, status);
   if (!band->state[0]) return -1;
-  if (!run_hostapd(band->iface, "list_sta", clients, sizeof(clients)) && !strstr(clients, "FAIL"))
-    snprintf(band->clients, sizeof(band->clients), "%s", clients);
   band->hidden = !read_config_value(band->conf, "ignore_broadcast_ssid", hidden, sizeof(hidden)) && atoi(hidden) != 0;
   band->available = 1;
   return 0;
@@ -91,15 +90,8 @@ static void add_band_json(JsonBuilder *j, const WifiBand *band) {
   json_add_str(j, "state", band->state);
   json_add_str(j, "ssid", band->ssid);
   json_add_str(j, "channel", band->channel);
-  json_arr_open(j, "clients");
-  char copy[sizeof(band->clients)];
-  snprintf(copy, sizeof(copy), "%s", band->clients);
-  char *save = NULL;
-  for (char *line = strtok_r(copy, "\r\n", &save); line; line = strtok_r(NULL, "\r\n", &save)) {
-    if (strstr(line, "Selected interface") || strstr(line, "FAIL") || strlen(line) < 17) continue;
-    json_arr_add_str(j, line);
-  }
-  json_arr_close(j);
+  if (band->available) wifi_clients_json(j,band->iface);
+  else { json_arr_open(j,"clients"); json_arr_close(j); }
   json_obj_close(j);
 }
 
@@ -153,10 +145,10 @@ static int write_all(int fd, const char *buf, size_t n) {
 
 static int replace_file(const char *path, const char *buf, size_t n, mode_t mode, uid_t uid, gid_t gid) {
   char tmp[256];
-  if (snprintf(tmp, sizeof(tmp), "%s.6677.tmp", path) >= (int)sizeof(tmp)) return -1;
-  int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, mode);
+  if (snprintf(tmp, sizeof(tmp), "%s.6677.XXXXXX", path) >= (int)sizeof(tmp)) return -1;
+  int fd = mkstemp(tmp);
   if (fd < 0) return -1;
-  int ok = fchmod(fd, mode) == 0 && fchown(fd, uid, gid) == 0 &&
+  int ok = fchown(fd, uid, gid) == 0 && fchmod(fd, mode) == 0 &&
            write_all(fd, buf, n) == 0 && fsync(fd) == 0;
   int e = errno;
   if (close(fd)) ok = 0;
@@ -165,7 +157,10 @@ static int replace_file(const char *path, const char *buf, size_t n, mode_t mode
     errno = e;
     return -1;
   }
-  return 0;
+  char parent[256]; snprintf(parent,sizeof(parent),"%s",path);
+  char *slash = strrchr(parent,'/'); if (!slash) return -1; *slash = 0;
+  fd = open(parent,O_RDONLY|O_DIRECTORY); if (fd < 0) return -1;
+  ok = fsync(fd) == 0; close(fd); return ok ? 0 : -1;
 }
 
 static int patch_config(const char *path, const char *ssid, const char *password,
@@ -229,7 +224,11 @@ static int patch_config(const char *path, const char *ssid, const char *password
   char backup[256];
   if (snprintf(backup, sizeof(backup), "%s.6677.bak", path) >= (int)sizeof(backup)) return -1;
   if (replace_file(backup, rollback, got, st.st_mode & 0777, st.st_uid, st.st_gid)) return -1;
-  return replace_file(path, out, used, st.st_mode & 0777, st.st_uid, st.st_gid);
+  if (replace_file(path, out, used, st.st_mode & 0777, st.st_uid, st.st_gid)) {
+    replace_file(path,rollback,got,st.st_mode & 0777,st.st_uid,st.st_gid);
+    return -1;
+  }
+  return 0;
 }
 
 static int restore_config(const char *path, mode_t mode, uid_t uid, gid_t gid) {
@@ -256,6 +255,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
   const char *iface = NULL, *conf = NULL;
   struct stat st;
   char output[1024] = {0};
+  int was_enabled = 0;
 
   pthread_mutex_lock(&wifi_config_mutex);
   if (!band || (strcmp(band, "2g") && strcmp(band, "5g")) ||
@@ -273,16 +273,32 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
   iface = !strcmp(band, "2g") ? "wlan1" : "wlan0";
   conf = !strcmp(band, "2g") ? CONF_2G : CONF_5G;
   if (stat(conf, &st)) { HTTP_ERROR(c, 500, "hostapd configuration is unavailable"); goto done; }
+  if (run_hostapd(iface,"status",output,sizeof(output)) || strstr(output,"FAIL") || !strstr(output,"state=")) {
+    HTTP_ERROR(c,503,"hostapd state unavailable; configuration was not changed"); goto done;
+  }
+  was_enabled = strstr(output,"state=ENABLED") != NULL;
   if (patch_config(conf, ssid ? ssid : "", password ? password : "",
                    (int)chnum, hidden_value, change_ssid, change_password,
                    change_channel, change_hidden)) {
-    HTTP_ERROR(c, 500, "failed to update hostapd configuration");
+    HTTP_ERROR(c, 500, "failed to update hostapd configuration; recovery copy retained");
     goto done;
   }
 
-  if (!run_hostapd(iface, "status", output, sizeof(output)) && strstr(output, "state=ENABLED")) {
+  if (was_enabled) {
     memset(output, 0, sizeof(output));
-    if (run_hostapd(iface, "reconfigure", output, sizeof(output)) || strstr(output, "FAIL")) {
+    int applied = !run_hostapd(iface,"reconfigure",output,sizeof(output)) && strstr(output,"OK");
+    int verified = 0;
+    for (int attempt=0;applied && attempt<5;attempt++) {
+      WifiBand actual = {0}; memset(output,0,sizeof(output));
+      if (!run_hostapd(iface,"status",output,sizeof(output))) {
+        parse_status(&actual,output);
+        verified = !strcmp(actual.state,"ENABLED") && (!change_ssid || !strcmp(actual.ssid,ssid)) &&
+          (!change_channel || atoi(actual.channel)==(int)chnum);
+      }
+      if (verified) break;
+      sleep(1);
+    }
+    if (!verified) {
       int restored = !restore_config(conf, st.st_mode & 0777, st.st_uid, st.st_gid);
       if (restored) { memset(output, 0, sizeof(output)); run_hostapd(iface, "reconfigure", output, sizeof(output)); }
       HTTP_ERROR(c, 500, restored ? "hostapd rejected config; previous file restored" : "hostapd rejected config; restore failed");
@@ -292,7 +308,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
 
   JsonBuilder *j = json_new();
   json_obj_open(j); json_add_int(j, "Code", 0); json_add_str(j, "Error", "");
-  json_add_str(j, "Data", "WiFi 配置已保存并应用"); json_obj_close(j);
+  json_add_str(j, "Data", was_enabled ? "WiFi 配置已保存并应用" : "WiFi 配置已保存，下次开启热点时应用"); json_obj_close(j);
   HTTP_OK_FREE(c, json_finish(j));
 
 done:

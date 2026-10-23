@@ -77,19 +77,24 @@
   },
 
   wifi: {
-    title: 'WiFi 热点管理', subtitle: '查看并配置 CW52 双频热点',
+    hostname: '主机名', clientWarning: '部分本地数据不可用',
     band24: '2.4 GHz', band5: '5 GHz', enabled: '已开启', disabled: '已关闭',
     channel: '信道', clients: '在线终端', noClients: '当前没有在线终端',
-    refresh: '刷新状态', enable: '开启热点', disable: '关闭热点',
-    editConfig: '配置热点', ssid: 'WiFi 名称', newPassword: '新密码', passwordHint: '留空表示不修改（8–63 位 ASCII）',
-    hidden: '隐藏 WiFi 名称', saveConfig: '保存并应用', confirmConfigure: '应用配置会短暂重载该频段热点，当前连接可能中断。继续吗？',
-    configureError: '配置应用失败', settingsSaved: 'WiFi 配置已保存', ssidRequired: 'WiFi 名称不能为空',
+    refresh: '刷新', enable: '开启热点', disable: '关闭热点',
     editConfig: '配置热点', ssid: 'WiFi 名称', newPassword: '新密码', passwordHint: '留空表示不修改（8–63 位 ASCII）',
     hidden: '隐藏 WiFi 名称', saveConfig: '保存并应用', confirmConfigure: '应用配置会短暂重载该频段热点，当前连接可能中断。继续吗？',
     configureError: '配置应用失败', settingsSaved: 'WiFi 配置已保存', ssidRequired: 'WiFi 名称不能为空',
     confirmDisable: '关闭后连接此频段的设备会断开。确定继续吗？',
     confirmEnable: '确定开启此频段热点吗？',
     loadError: '读取 hostapd 状态失败', unsupported: '设备没有可用的 hostapd 控制接口'
+  },
+
+  lan: {
+    netmask: '子网掩码', dns: '系统 DNS', poolStart: 'DHCP 起始地址', poolEnd: 'DHCP 结束地址',
+    addressWarning: '更改 LAN 地址会断开管理连接；当前管理通道固定，地址和掩码仅供查看。',
+    confirm: '保存 DHCP 地址池可能短暂影响客户端续租。更改 LAN 地址会断开连接，本次保留地址和掩码。确认应用？',
+    saved: 'DHCP 地址池已保存并核验', saveError: 'LAN 保存失败', loadError: 'LAN 读取失败',
+    unsupported: '未检测到 CW52 ConnMan DHCP 接口'
   },
 
   // 顶部状态栏

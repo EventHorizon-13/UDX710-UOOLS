@@ -22,6 +22,7 @@
 #include "traffic.h"
 #include "usb_mode.h"
 #include "system/wifi.h"
+#include "system/lan.h"
 #include <glib.h>
 #include <signal.h>
 #include <stdint.h>
@@ -162,6 +163,8 @@ static void http_handler(struct mg_connection *c, int ev, void *ev_data) {
     /* API 路由 */
     if (mg_match(hm->uri, mg_str("/api/wifi"), NULL)) {
       handle_wifi(c, hm);
+    } else if (mg_match(hm->uri, mg_str("/api/lan"), NULL)) {
+      handle_lan(c, hm);
     } else if (mg_match(hm->uri, mg_str("/api/info"), NULL)) {
       handle_info(c, hm);
     } else if (mg_match(hm->uri, mg_str("/api/at"), NULL)) {

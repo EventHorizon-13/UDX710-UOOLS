@@ -3,6 +3,7 @@ import { ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { authFetch } from '../composables/useApi'
 import { useToast } from '../composables/useToast'
+import LanConfig from './LanConfig.vue'
 
 const { t } = useI18n()
 const { success, error: showError } = useToast()
@@ -98,81 +99,79 @@ onMounted(loadStatus)
 </script>
 
 <template>
-  <section class="space-y-6">
-    <header class="flex flex-wrap items-end justify-between gap-4">
-      <div>
-        <p class="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-sky-500">CW52 · HOSTAPD</p>
-        <h2 class="text-2xl font-bold text-slate-900 dark:text-white">{{ t('wifi.title') }}</h2>
-        <p class="mt-1 text-sm text-slate-500 dark:text-white/55">{{ t('wifi.subtitle') }}</p>
-      </div>
-      <button @click="loadStatus" :disabled="loading" class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md disabled:opacity-50 dark:border-white/10 dark:bg-white/5 dark:text-white/80">
-        <font-awesome-icon icon="sync-alt" class="mr-2" :class="{ 'animate-spin': loading }" />{{ t('wifi.refresh') }}
-      </button>
-    </header>
-
-    <div v-if="loading && !bands.length" class="rounded-2xl border border-slate-200 bg-white/70 p-10 text-center text-slate-500 dark:border-white/10 dark:bg-white/5 dark:text-white/50">
-      <span class="inline-block h-7 w-7 animate-spin rounded-full border-2 border-sky-500/30 border-t-sky-500"></span>
-    </div>
-    <div v-else-if="!supported" class="rounded-2xl border border-amber-300/60 bg-amber-50 p-6 text-amber-800 dark:border-amber-300/20 dark:bg-amber-500/10 dark:text-amber-200">{{ t('wifi.unsupported') }}</div>
-
-    <div v-else class="grid gap-4 xl:grid-cols-2">
-      <article v-for="band in bands" :key="band.interface" class="overflow-hidden rounded-2xl border border-slate-200/80 bg-white/80 shadow-sm dark:border-white/10 dark:bg-slate-900/55">
-        <div class="flex items-start justify-between gap-4 border-b border-slate-200/70 p-5 dark:border-white/10">
-          <div class="min-w-0">
-            <p class="text-xs font-medium text-slate-500 dark:text-white/45">{{ band.interface }}</p>
-            <h3 class="mt-1 truncate text-lg font-bold text-slate-900 dark:text-white">{{ band.interface === 'wlan1' ? t('wifi.band24') : t('wifi.band5') }}</h3>
-            <p class="mt-2 truncate text-sm text-slate-600 dark:text-white/65">{{ band.ssid || '—' }}</p>
+  <section class="wifi-page">
+    <div class="toolbar"><button @click="loadStatus" :disabled="loading"><font-awesome-icon icon="sync-alt" :class="{ 'animate-spin': loading }" /> {{ t('wifi.refresh') }}</button></div>
+    <p v-if="loading && !bands.length" role="status">{{ t('common.loading') }}</p>
+    <p v-else-if="!supported" role="status">{{ t('wifi.unsupported') }}</p>
+    <div v-else class="bands">
+      <article v-for="band in bands" :key="band.interface" class="wifi-card">
+        <header class="band-header">
+          <div class="band-name"><h3>{{ band.band }}</h3><p>{{ band.ssid || '—' }}</p></div>
+          <div class="actions">
+            <button @click="editConfig(band)" :disabled="busyBand === band.interface">{{ t('wifi.editConfig') }}</button>
+            <button @click="setRadio(band)" :disabled="busyBand === band.interface" :aria-label="band.enabled ? t('wifi.disable') : t('wifi.enable')" :aria-pressed="band.enabled" :class="{ enabled: band.enabled }">{{ band.enabled ? t('wifi.enabled') : t('wifi.disabled') }}</button>
           </div>
-          <span class="shrink-0 rounded-full px-3 py-1 text-xs font-semibold" :class="band.enabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-white/50'">
-            {{ band.enabled ? t('wifi.enabled') : t('wifi.disabled') }}
-          </span>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3 p-5">
-          <div class="rounded-xl bg-slate-100/80 p-3 dark:bg-white/5">
-            <p class="text-xs text-slate-500 dark:text-white/45">{{ t('wifi.channel') }}</p>
-            <p class="mt-1 font-semibold text-slate-800 dark:text-white/85">{{ band.channel || '—' }}</p>
+        </header>
+        <p class="band-state">{{ t('wifi.channel') }} {{ band.channel || '—' }}<span v-if="band.hidden"> · {{ t('wifi.hidden') }}</span></p>
+        <form v-if="configOpen[band.interface]" class="config-form" @submit.prevent="saveConfig(band)">
+          <label>{{ t('wifi.ssid') }}<input v-model="configDraft[band.interface].ssid" required maxlength="32" autocomplete="off" /></label>
+          <label>{{ t('wifi.newPassword') }}<input v-model="configDraft[band.interface].password" type="password" minlength="8" maxlength="63" autocomplete="new-password" :placeholder="t('wifi.passwordHint')" /></label>
+          <label>{{ t('wifi.channel') }}<select v-model.number="configDraft[band.interface].channel"><option v-for="channel in (band.interface === 'wlan1' ? channels24 : channels5)" :key="channel" :value="channel">{{ channel }}</option></select></label>
+          <label class="hidden-control"><input v-model="configDraft[band.interface].hidden" type="checkbox" />{{ t('wifi.hidden') }}</label>
+          <div class="form-actions"><button type="button" @click="configOpen[band.interface] = false">{{ t('common.cancel') }}</button><button type="submit" :disabled="busyBand === band.interface">{{ busyBand === band.interface ? t('common.saving') : t('wifi.saveConfig') }}</button></div>
+        </form>
+        <div class="clients">
+          <h4>{{ t('wifi.clients') }} <span>{{ band.clients_complete === false ? '—' : band.clients?.length || 0 }}</span></h4>
+          <p v-if="band.client_warnings?.length" class="client-warning" role="status">{{ t('wifi.clientWarning') }}: {{ band.client_warnings.join('; ') }}</p>
+          <div v-for="client in band.clients" :key="client.mac" class="client">
+            <dl>
+              <div><dt>{{ t('wifi.hostname') }}</dt><dd>{{ client.hostname || '—' }}</dd></div>
+              <div><dt>MAC</dt><dd class="address">{{ client.mac }}</dd></div>
+              <div><dt>IPv4</dt><dd class="address"><span v-for="ip in client.ipv4" :key="ip">{{ ip }}</span><span v-if="!client.ipv4?.length">—</span></dd></div>
+              <div><dt>IPv6</dt><dd class="address"><span v-for="ip in client.ipv6" :key="ip">{{ ip }}</span><span v-if="!client.ipv6?.length">—</span></dd></div>
+            </dl>
           </div>
-          <div class="rounded-xl bg-slate-100/80 p-3 dark:bg-white/5">
-            <p class="text-xs text-slate-500 dark:text-white/45">{{ t('wifi.clients') }}</p>
-            <p class="mt-1 font-semibold text-slate-800 dark:text-white/85">{{ band.clients?.length || 0 }}</p>
-          </div>
-        </div>
-
-        <div class="grid grid-cols-2 gap-3 px-5 pb-5">
-          <button @click="editConfig(band)" :disabled="busyBand === band.interface" class="rounded-xl border border-sky-300/70 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-700 transition hover:bg-sky-100 disabled:opacity-50 dark:border-sky-400/20 dark:bg-sky-400/10 dark:text-sky-200 dark:hover:bg-sky-400/15">{{ t('wifi.editConfig') }}</button>
-          <button @click="setRadio(band)" :disabled="busyBand === band.interface || !band.available" class="rounded-xl px-4 py-3 text-sm font-semibold text-white shadow transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-50" :class="band.enabled ? 'bg-slate-700 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600' : 'bg-gradient-to-r from-sky-500 to-blue-500 hover:from-sky-400 hover:to-blue-400'">
-            {{ busyBand === band.interface ? t('common.loading') : (band.enabled ? t('wifi.disable') : t('wifi.enable')) }}
-          </button>
-        </div>
-
-        <div v-if="configOpen[band.interface]" class="space-y-4 border-t border-slate-200/70 p-5 dark:border-white/10">
-          <label class="block text-sm font-medium text-slate-600 dark:text-white/70">{{ t('wifi.ssid') }}
-            <input v-model="configDraft[band.interface].ssid" maxlength="32" autocomplete="off" class="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-white" />
-          </label>
-          <label class="block text-sm font-medium text-slate-600 dark:text-white/70">{{ t('wifi.newPassword') }}
-            <input v-model="configDraft[band.interface].password" type="password" minlength="8" maxlength="63" autocomplete="new-password" :placeholder="t('wifi.passwordHint')" class="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 outline-none transition focus:border-sky-400 dark:border-white/10 dark:bg-white/5 dark:text-white" />
-          </label>
-          <label class="block text-sm font-medium text-slate-600 dark:text-white/70">{{ t('wifi.channel') }}
-            <select v-model.number="configDraft[band.interface].channel" class="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-900 outline-none focus:border-sky-400 dark:border-white/10 dark:bg-slate-800 dark:text-white">
-              <option v-for="channel in (band.interface === 'wlan1' ? channels24 : channels5)" :key="channel" :value="channel">{{ channel }}</option>
-            </select>
-          </label>
-          <label class="flex items-center gap-3 text-sm text-slate-700 dark:text-white/75"><input v-model="configDraft[band.interface].hidden" type="checkbox" class="h-4 w-4 accent-sky-500" />{{ t('wifi.hidden') }}</label>
-          <div class="flex gap-3">
-            <button @click="configOpen[band.interface] = false" class="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-semibold text-slate-600 dark:border-white/10 dark:text-white/65">{{ t('common.cancel') }}</button>
-            <button @click="saveConfig(band)" :disabled="busyBand === band.interface" class="flex-1 rounded-xl bg-gradient-to-r from-sky-500 to-blue-500 px-4 py-3 text-sm font-semibold text-white shadow transition hover:from-sky-400 hover:to-blue-400 disabled:opacity-50">{{ busyBand === band.interface ? t('common.saving') : t('wifi.saveConfig') }}</button>
-          </div>
-        </div>
-
-        <div class="border-t border-slate-200/70 px-5 py-4 dark:border-white/10">
-          <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-white/45">{{ t('wifi.clients') }}</p>
-          <div v-if="band.clients?.length" class="flex flex-wrap gap-2">
-            <code v-for="client in band.clients" :key="client" class="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-slate-700 dark:bg-white/5 dark:text-white/70">{{ client }}</code>
-          </div>
-          <p v-else class="text-sm text-slate-400 dark:text-white/35">{{ t('wifi.noClients') }}</p>
+          <p v-if="!band.clients?.length && band.clients_complete !== false" class="empty">{{ t('wifi.noClients') }}</p>
         </div>
       </article>
     </div>
+    <LanConfig />
   </section>
 </template>
+
+<style scoped>
+.wifi-page { display:grid; gap:16px; min-width:0; }
+.toolbar { display:flex; justify-content:flex-end; }
+.bands { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-items:start; }
+.wifi-card { min-width:0; border:1px solid rgb(148 163 184 / .25); border-radius:16px; padding:16px; background:rgb(255 255 255 / .65); }
+:global(.dark) .wifi-card { background:rgb(15 23 42 / .4); }
+.band-header { display:flex; flex-wrap:wrap; align-items:start; justify-content:space-between; gap:12px; }
+.band-name { min-width:0; flex:1 1 100px; overflow-wrap:anywhere; }
+h3 { font-size:16px; font-weight:700; } .band-name p { font-size:14px; margin-top:3px; }
+.actions, .form-actions { display:flex; flex-wrap:wrap; gap:8px; }
+button { border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:7px 10px; font-size:13px; transition:background .15s; }
+button:hover:enabled { background:rgb(148 163 184 / .12); } button:disabled { opacity:.45; cursor:default; }
+button.enabled { color:#059669; background:rgb(16 185 129 / .1); border-color:rgb(16 185 129 / .3); }
+:global(.dark) button.enabled { color:#6ee7b7; }
+button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
+.band-state { margin-top:10px; font-size:12px; opacity:.65; }
+.clients { margin-top:14px; border-top:1px solid rgb(148 163 184 / .2); padding-top:12px; }
+h4 { font-size:13px; font-weight:600; } h4 span { margin-left:5px; opacity:.6; font-weight:400; }
+.client { padding:12px 0; border-bottom:1px solid rgb(148 163 184 / .15); }
+.client:last-child { border:0; padding-bottom:0; }
+dl { display:grid; gap:6px; font-size:13px; } dl > div { display:grid; grid-template-columns:60px minmax(0,1fr); gap:10px; }
+dt { opacity:.6; } dd { min-width:0; overflow-wrap:anywhere; user-select:text; } dd span { display:block; }
+.address { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
+.empty { margin-top:8px; font-size:13px; opacity:.55; }
+.client-warning { color:#b45309; font-size:12px; overflow-wrap:anywhere; margin-top:8px; }
+:global(.dark) .client-warning { color:#fbbf24; }
+.config-form { border-top:1px solid rgb(148 163 184 / .2); margin-top:14px; padding-top:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
+.config-form label { display:grid; gap:5px; font-size:13px; min-width:0; }
+.config-form input:not([type=checkbox]), select { width:100%; min-width:0; border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:8px 10px; background:transparent; }
+:global(.dark) option { background:#1e293b; }
+.config-form .hidden-control { display:flex; align-items:center; gap:8px; }
+.form-actions { grid-column:1/-1; justify-content:flex-end; }
+@media (max-width:1100px) { .bands { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:440px) { .wifi-card { padding:14px; } .config-form { grid-template-columns:minmax(0,1fr); } }
+@media (prefers-reduced-motion:reduce) { button { transition:none; } }
+</style>
