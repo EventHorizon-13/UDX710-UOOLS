@@ -26,12 +26,23 @@ jobs:
 
       - name: Configure cross compiler (aarch64)
         run: |
-          mkdir -p $GITHUB_WORKSPACE/tools
-          if [ ! -d "$GITHUB_WORKSPACE/tools/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu" ]; then
-            wget https://releases.linaro.org/components/toolchain/binaries/7.5-2019.12/aarch64-linux-gnu/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz
-            tar xf gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz -C $GITHUB_WORKSPACE/tools
+          set -euo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/tools"
+          TOOLCHAIN_DIR="$GITHUB_WORKSPACE/tools/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu"
+          ARCHIVE="gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu.tar.xz"
+
+          if [ ! -x "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc" ]; then
+            curl --fail --location --retry 3 --retry-all-errors \
+              "https://huggingface.co/csukuangfj/sherpa-ncnn-toolchains/resolve/main/$ARCHIVE?download=true" \
+              --output "$GITHUB_WORKSPACE/$ARCHIVE"
+            echo "30c7a2ef1a268d1231a9e7156ec64eb6  $GITHUB_WORKSPACE/$ARCHIVE" | md5sum --check -
+            tar -xJf "$GITHUB_WORKSPACE/$ARCHIVE" -C "$GITHUB_WORKSPACE/tools"
+            rm "$GITHUB_WORKSPACE/$ARCHIVE"
           fi
-          echo "PATH=$PATH:$GITHUB_WORKSPACE/tools/gcc-linaro-7.5.0-2019.12-x86_64_aarch64-linux-gnu/bin" >> $GITHUB_ENV
+
+          test -x "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-gcc"
+          test -x "$TOOLCHAIN_DIR/bin/aarch64-linux-gnu-strip"
+          echo "$TOOLCHAIN_DIR/bin" >> "$GITHUB_PATH"
 
       - name: build web
         run: |
@@ -59,4 +70,3 @@ jobs:
         with:
           name: udx710-tools
           path: output
-
