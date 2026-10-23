@@ -35,7 +35,7 @@ jobs:
             curl --fail --location --retry 3 --retry-all-errors \
               "https://huggingface.co/csukuangfj/sherpa-ncnn-toolchains/resolve/main/$ARCHIVE?download=true" \
               --output "$GITHUB_WORKSPACE/$ARCHIVE"
-            echo "30c7a2ef1a268d1231a9e7156ec64eb6  $GITHUB_WORKSPACE/$ARCHIVE" | md5sum --check -
+            echo "30c7a2ef1a268d1231fb441ee832eb6f  $GITHUB_WORKSPACE/$ARCHIVE" | md5sum --check -
             tar -xJf "$GITHUB_WORKSPACE/$ARCHIVE" -C "$GITHUB_WORKSPACE/tools"
             rm "$GITHUB_WORKSPACE/$ARCHIVE"
           fi
