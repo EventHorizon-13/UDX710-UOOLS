@@ -11,6 +11,7 @@ const { confirm } = useConfirm()
 
 const systemInfo = inject('systemInfo')
 const loading = inject('loading')
+const batteryAvailable = inject('batteryAvailable')
 const clearingCache = ref(false)
 
 // IMEI/ICCID 显示控制
@@ -523,7 +524,7 @@ async function handleClearCache() {
           </div>
         </div>
         
-        <div class="group relative overflow-hidden p-2 sm:p-3 md:p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-500/10 dark:to-emerald-500/10 rounded-xl sm:rounded-2xl border border-green-200 dark:border-green-500/20 hover:border-green-500/50 transition-all hover:scale-105">
+        <div v-if="batteryAvailable" class="group relative overflow-hidden p-2 sm:p-3 md:p-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-500/10 dark:to-emerald-500/10 rounded-xl sm:rounded-2xl border border-green-200 dark:border-green-500/20 hover:border-green-500/50 transition-all hover:scale-105">
           <div class="absolute -top-2 -right-2 w-12 h-12 bg-green-500/20 rounded-full blur-xl group-hover:scale-150 transition-transform"></div>
           <div class="relative text-center">
             <div class="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 mx-auto mb-1.5 sm:mb-2 md:mb-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-green-500 to-emerald-400 flex items-center justify-center shadow-lg shadow-green-500/30">
@@ -534,7 +535,7 @@ async function handleClearCache() {
           </div>
         </div>
         
-        <div class="group relative overflow-hidden p-2 sm:p-3 md:p-4 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-500/10 dark:to-cyan-500/10 rounded-xl sm:rounded-2xl border border-blue-200 dark:border-blue-500/20 hover:border-blue-500/50 transition-all hover:scale-105">
+        <div v-if="batteryAvailable" class="group relative overflow-hidden p-2 sm:p-3 md:p-4 bg-gradient-to-br from-blue-50 to-cyan-50 dark:from-blue-500/10 dark:to-cyan-500/10 rounded-xl sm:rounded-2xl border border-blue-200 dark:border-blue-500/20 hover:border-blue-500/50 transition-all hover:scale-105">
           <div class="absolute -top-2 -right-2 w-12 h-12 bg-blue-500/20 rounded-full blur-xl group-hover:scale-150 transition-transform"></div>
           <div class="relative text-center">
             <div class="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 mx-auto mb-1.5 sm:mb-2 md:mb-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/30">
@@ -545,7 +546,7 @@ async function handleClearCache() {
           </div>
         </div>
         
-        <div class="group relative overflow-hidden p-2 sm:p-3 md:p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-500/10 dark:to-pink-500/10 rounded-xl sm:rounded-2xl border border-purple-200 dark:border-purple-500/20 hover:border-purple-500/50 transition-all hover:scale-105">
+        <div v-if="batteryAvailable" class="group relative overflow-hidden p-2 sm:p-3 md:p-4 bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-500/10 dark:to-pink-500/10 rounded-xl sm:rounded-2xl border border-purple-200 dark:border-purple-500/20 hover:border-purple-500/50 transition-all hover:scale-105">
           <div class="absolute -top-2 -right-2 w-12 h-12 bg-purple-500/20 rounded-full blur-xl group-hover:scale-150 transition-transform"></div>
           <div class="relative text-center">
             <div class="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 mx-auto mb-1.5 sm:mb-2 md:mb-3 rounded-xl sm:rounded-2xl bg-gradient-to-br from-purple-500 to-pink-400 flex items-center justify-center shadow-lg shadow-purple-500/30">

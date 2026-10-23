@@ -77,10 +77,16 @@ export default {
   },
 
   wifi: {
-    title: 'WiFi hotspot management', subtitle: 'Read AP status and clients through hostapd control',
+    title: 'WiFi hotspot management', subtitle: 'View and configure the CW52 dual-band hotspots',
     band24: '2.4 GHz', band5: '5 GHz', enabled: 'Enabled', disabled: 'Disabled',
     channel: 'Channel', clients: 'Connected clients', noClients: 'No connected clients',
     refresh: 'Refresh status', enable: 'Enable hotspot', disable: 'Disable hotspot',
+    editConfig: 'Configure hotspot', ssid: 'WiFi name', newPassword: 'New password', passwordHint: 'Leave blank to keep current password (8–63 ASCII characters)',
+    hidden: 'Hide WiFi name', saveConfig: 'Save and apply', confirmConfigure: 'Applying this config briefly reloads the selected hotspot and may disconnect clients. Continue?',
+    configureError: 'Failed to apply WiFi configuration', settingsSaved: 'WiFi configuration saved', ssidRequired: 'WiFi name is required',
+    editConfig: 'Configure hotspot', ssid: 'WiFi name', newPassword: 'New password', passwordHint: 'Leave blank to keep current password (8–63 ASCII characters)',
+    hidden: 'Hide WiFi name', saveConfig: 'Save and apply', confirmConfigure: 'Applying this config briefly reloads the selected hotspot and may disconnect clients. Continue?',
+    configureError: 'Failed to apply WiFi configuration', settingsSaved: 'WiFi configuration saved', ssidRequired: 'WiFi name is required',
     confirmDisable: 'Clients on this band will disconnect. Continue?',
     confirmEnable: 'Enable this hotspot band?',
     loadError: 'Failed to read hostapd status', unsupported: 'No usable hostapd control interface'

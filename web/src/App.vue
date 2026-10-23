@@ -277,11 +277,12 @@ const systemInfo = ref({})
 const loading = ref(false)
 const lastUpdate = ref('')
 
+const batteryAvailable = ref(false)
 provide('systemInfo', systemInfo)
 provide('loading', loading)
+provide('batteryAvailable', batteryAvailable)
 
 // 菜单配置 - 电池项依据设备实际 power_supply 能力显示
-const batteryAvailable = ref(false)
 const menuItems = computed(() => [
   { id: 'monitor', labelKey: 'menu.monitor', icon: 'fa-tachometer-alt', color: 'from-blue-500 to-cyan-400' },
   { id: 'network', labelKey: 'menu.network', icon: 'fa-network-wired', color: 'from-purple-500 to-pink-400' },
