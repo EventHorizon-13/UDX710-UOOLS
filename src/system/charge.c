@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <pthread.h>
 #include <sys/stat.h>
+#include <dirent.h>
 #include <sys/socket.h>
 #include <linux/netlink.h>
 #include <time.h>
@@ -304,6 +305,30 @@ void init_charge(void) {
 }
 
 
+/* Detect a real Battery power_supply node for capability-aware UI. */
+static int has_battery_supply(void) {
+    DIR *dir = opendir("/sys/class/power_supply");
+    if (!dir) return 0;
+    struct dirent *entry;
+    int found = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+        char path[256];
+        snprintf(path, sizeof(path), "/sys/class/power_supply/%s/type", entry->d_name);
+        FILE *f = fopen(path, "r");
+        if (!f) continue;
+        char type[32] = {0};
+        if (fgets(type, sizeof(type), f)) {
+            type[strcspn(type, "\r\n")] = '\0';
+            if (strcmp(type, "Battery") == 0) found = 1;
+        }
+        fclose(f);
+        if (found) break;
+    }
+    closedir(dir);
+    return found;
+}
+
 /* GET/POST /api/charge/config - 获取/设置充电配置 */
 void handle_charge_config(struct mg_connection *c, struct mg_http_message *hm) {
     HTTP_CHECK_ANY(c, hm);
@@ -332,6 +357,7 @@ void handle_charge_config(struct mg_connection *c, struct mg_http_message *hm) {
         
         /* battery对象 */
         json_key_obj_open(j, "battery");
+        json_add_bool(j, "present", has_battery_supply());
         json_add_int(j, "capacity", battery.capacity);
         json_add_bool(j, "charging", strcmp(battery.status, "Charging") == 0);
         json_add_str(j, "status", battery.status);

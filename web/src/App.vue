@@ -7,6 +7,7 @@ import AdvancedNetwork from './components/AdvancedNetwork.vue'
 import SmsManager from './components/SmsManager.vue'
 import TrafficStats from './components/TrafficStats.vue'
 import BatteryManager from './components/BatteryManager.vue'
+import WifiManager from './components/WifiManager.vue'
 import SystemSettings from './components/SystemSettings.vue'
 import SystemUpdate from './components/SystemUpdate.vue'
 import ATDebug from './components/ATDebug.vue'
@@ -279,10 +280,12 @@ const lastUpdate = ref('')
 provide('systemInfo', systemInfo)
 provide('loading', loading)
 
-// 菜单配置 - 使用i18n key
-const menuItems = [
+// 菜单配置 - 电池项依据设备实际 power_supply 能力显示
+const batteryAvailable = ref(false)
+const menuItems = computed(() => [
   { id: 'monitor', labelKey: 'menu.monitor', icon: 'fa-tachometer-alt', color: 'from-blue-500 to-cyan-400' },
   { id: 'network', labelKey: 'menu.network', icon: 'fa-network-wired', color: 'from-purple-500 to-pink-400' },
+  { id: 'wifi', labelKey: 'menu.wifi', icon: 'fa-wifi', color: 'from-sky-500 to-blue-400' },
   { id: 'netif', labelKey: 'menu.netif', icon: 'fa-ethernet', color: 'from-teal-500 to-cyan-400' },
   { id: 'apn', labelKey: 'menu.apn', icon: 'fa-globe', color: 'from-teal-500 to-cyan-400' },
   { id: 'advanced', labelKey: 'menu.advanced', icon: 'fa-tower-cell', color: 'from-cyan-500 to-blue-500' },
@@ -297,7 +300,17 @@ const menuItems = [
   { id: 'usb', labelKey: 'menu.usb', icon: ['fab', 'usb'], color: 'from-purple-500 to-pink-400' },
   { id: 'plugins', labelKey: 'menu.plugins', icon: 'fa-puzzle-piece', color: 'from-violet-500 to-purple-400' },
   { id: 'settings', labelKey: 'menu.settings', icon: 'fa-sliders-h', color: 'from-orange-500 to-amber-400' }
-]
+].filter(item => item.id !== 'battery' || batteryAvailable.value))
+
+async function detectBatteryAvailability() {
+  try {
+    const response = await fetch('/api/charge/config')
+    if (!response.ok) return
+    const result = await response.json()
+    batteryAvailable.value = result?.Data?.battery?.present === true
+    if (!batteryAvailable.value && activeMenu.value === 'battery') activeMenu.value = 'monitor'
+  } catch (_) { batteryAvailable.value = false }
+}
 
 // 获取系统信息
 async function fetchSystemInfo() {
@@ -353,6 +366,7 @@ onMounted(async () => {
   
   // 检查登录状态
   await checkAuthStatus()
+  await detectBatteryAvailability()
   
   // 如果已登录且密保已设置，开始获取系统信息
   if (isAuthenticated.value && securitySet.value) {
@@ -681,10 +695,11 @@ onUnmounted(() => {
         <Transition v-else name="fade" mode="out-in">
           <SystemMonitor v-if="activeMenu === 'monitor'" key="monitor" />
           <NetworkManager v-else-if="activeMenu === 'network'" key="network" />
+          <WifiManager v-else-if="activeMenu === 'wifi'" key="wifi" />
           <AdvancedNetwork v-else-if="activeMenu === 'advanced'" key="advanced" />
           <SmsManager v-else-if="activeMenu === 'sms'" key="sms" />
           <TrafficStats v-else-if="activeMenu === 'traffic'" key="traffic" />
-          <BatteryManager v-else-if="activeMenu === 'battery'" key="battery" />
+          <BatteryManager v-else-if="activeMenu === 'battery' && batteryAvailable" key="battery" />
           <RatholeManager v-else-if="activeMenu === 'rathole'" key="rathole" />
           <IPv6Proxy v-else-if="activeMenu === 'ipv6proxy'" key="ipv6proxy" />
           <SystemUpdate v-else-if="activeMenu === 'update'" key="update" />

@@ -64,6 +64,7 @@
     advanced: '高级网络',
     sms: '短信管理',
     traffic: '流量统计',
+    wifi: 'WiFi 管理',
     battery: '充电控制',
     rathole: '内网穿透',
     ipv6proxy: 'IPv6转发',
@@ -73,6 +74,16 @@
     usb: 'USB模式',
     plugins: '插件商城',
     settings: '系统设置'
+  },
+
+  wifi: {
+    title: 'WiFi 热点管理', subtitle: '通过 hostapd 控制接口查看状态、在线终端并启停热点',
+    band24: '2.4 GHz', band5: '5 GHz', enabled: '已开启', disabled: '已关闭',
+    channel: '信道', clients: '在线终端', noClients: '当前没有在线终端',
+    refresh: '刷新状态', enable: '开启热点', disable: '关闭热点',
+    confirmDisable: '关闭后连接此频段的设备会断开。确定继续吗？',
+    confirmEnable: '确定开启此频段热点吗？',
+    loadError: '读取 hostapd 状态失败', unsupported: '设备没有可用的 hostapd 控制接口'
   },
 
   // 顶部状态栏

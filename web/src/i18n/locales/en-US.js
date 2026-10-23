@@ -64,6 +64,7 @@ export default {
     advanced: 'Advanced',
     sms: 'SMS',
     traffic: 'Traffic',
+    wifi: 'WiFi',
     battery: 'Battery',
     rathole: 'Tunnel',
     ipv6proxy: 'IPv6 Forward',
@@ -73,6 +74,16 @@ export default {
     usb: 'USB Mode',
     plugins: 'Plugins',
     settings: 'Settings'
+  },
+
+  wifi: {
+    title: 'WiFi hotspot management', subtitle: 'Read AP status and clients through hostapd control',
+    band24: '2.4 GHz', band5: '5 GHz', enabled: 'Enabled', disabled: 'Disabled',
+    channel: 'Channel', clients: 'Connected clients', noClients: 'No connected clients',
+    refresh: 'Refresh status', enable: 'Enable hotspot', disable: 'Disable hotspot',
+    confirmDisable: 'Clients on this band will disconnect. Continue?',
+    confirmEnable: 'Enable this hotspot band?',
+    loadError: 'Failed to read hostapd status', unsupported: 'No usable hostapd control interface'
   },
 
   // Header
