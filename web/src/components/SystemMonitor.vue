@@ -161,19 +161,19 @@ async function handleClearCache() {
       <div class="absolute bottom-0 left-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
       
       <div class="relative">
-        <div class="flex items-center justify-between mb-6">
-          <div class="flex items-center space-x-3">
-            <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
+        <div class="flex items-center justify-between gap-2 mb-4">
+          <div class="flex min-w-0 items-center space-x-2">
+            <div class="w-10 h-10 md:w-12 md:h-12 shrink-0 rounded-xl md:rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center shadow-lg shadow-purple-500/30">
               <i class="fas fa-satellite-dish text-white text-xl"></i>
             </div>
             <div>
-              <h3 class="text-slate-800 dark:text-white font-bold text-sm sm:text-lg">{{ t('monitor.title') }}</h3>
-              <p class="text-slate-600 dark:text-white/50 text-sm">{{ t('monitor.subtitle') }}</p>
+              <h3 class="text-slate-800 dark:text-white font-bold text-sm sm:text-base md:text-lg">{{ t('monitor.title') }}</h3>
+              <p class="hidden md:block text-slate-600 dark:text-white/50 text-sm">{{ t('monitor.subtitle') }}</p>
             </div>
           </div>
-          <div class="flex items-center space-x-4">
+          <div class="flex shrink-0 items-center space-x-2">
             <!-- RSRP信号强度指示 -->
-            <div v-if="currentBand" class="flex items-center space-x-2 px-3 py-2 bg-white/80 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
+            <div v-if="currentBand" class="flex items-center space-x-2 px-2 md:px-3 py-2 bg-white/80 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10">
               <div class="flex items-end space-x-0.5 h-5">
                 <!-- 4格信号：根据level决定高亮数量 -->
                 <div class="w-1.5 h-2 rounded-full" :class="getSignalLevel(currentBand.rsrp) >= 1 ? getSignalColor(currentBand.rsrp).bg : 'bg-gray-300 dark:bg-gray-600'"></div>
@@ -181,7 +181,7 @@ async function handleClearCache() {
                 <div class="w-1.5 h-4 rounded-full" :class="getSignalLevel(currentBand.rsrp) >= 3 ? getSignalColor(currentBand.rsrp).bg : 'bg-gray-300 dark:bg-gray-600'"></div>
                 <div class="w-1.5 h-5 rounded-full" :class="getSignalLevel(currentBand.rsrp) >= 4 ? getSignalColor(currentBand.rsrp).bg : 'bg-gray-300 dark:bg-gray-600'"></div>
               </div>
-              <span class="text-sm font-medium" :class="getSignalColor(currentBand.rsrp).text">
+              <span class="whitespace-nowrap text-xs md:text-sm font-medium" :class="getSignalColor(currentBand.rsrp).text">
                 {{ currentBand.rsrp ? currentBand.rsrp.toFixed(0) + ' dBm' : 'N/A' }}
               </span>
             </div>

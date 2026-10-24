@@ -619,7 +619,7 @@ onUnmounted(() => {
 
     <!-- 主内容区 -->
     <main 
-      class="flex-1 transition-all duration-300 w-full"
+      class="flex-1 min-w-0 transition-all duration-300 w-full"
       :class="isMobile ? 'ml-0' : (sidebarCollapsed ? 'ml-20' : 'ml-64')"
     >
       <!-- 顶部状态栏 -->
@@ -640,7 +640,7 @@ onUnmounted(() => {
                 <h2 class="text-lg md:text-2xl font-bold text-slate-900 dark:text-white truncate">
                   {{ t(menuItems.find(m => m.id === activeMenu)?.labelKey) }}
                 </h2>
-                <p v-if="activeMenu !== 'wifi'" class="text-slate-500 dark:text-white/50 text-xs md:text-sm mt-0.5 md:mt-1 hidden sm:block">{{ t('header.realtimeMonitor') }}</p>
+                <p v-if="activeMenu !== 'wifi'" class="text-slate-500 dark:text-white/50 text-xs md:text-sm mt-0.5 md:mt-1 hidden md:block">{{ t('header.realtimeMonitor') }}</p>
               </div>
             </div>
             <!-- 右侧：状态信息 -->
