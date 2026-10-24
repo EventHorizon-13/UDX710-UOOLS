@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { authFetch } from '../composables/useApi'
 import { useToast } from '../composables/useToast'
@@ -8,6 +8,13 @@ import LanConfig from './LanConfig.vue'
 const { t } = useI18n()
 const { success, error: showError } = useToast()
 const bands = ref([])
+const clients = computed(() => bands.value.flatMap(band => (band.clients || []).map(client => ({
+  ...client,
+  interface: band.interface,
+  band: band.interface === 'wlan1' ? '2.4G' : '5G'
+}))))
+const clientsComplete = computed(() => bands.value.every(band => band.clients_complete !== false))
+const clientWarnings = computed(() => bands.value.flatMap(band => (band.client_warnings || []).map(warning => `${band.band}: ${warning}`)))
 const loading = ref(true)
 const busyBand = ref('')
 const supported = ref(true)
@@ -109,7 +116,7 @@ onMounted(loadStatus)
           <div class="band-name"><h3>{{ band.band }}</h3><p>{{ band.ssid || '—' }}</p></div>
           <div class="actions">
             <button @click="editConfig(band)" :disabled="busyBand === band.interface">{{ t('wifi.editConfig') }}</button>
-            <button @click="setRadio(band)" :disabled="busyBand === band.interface" :aria-label="band.enabled ? t('wifi.disable') : t('wifi.enable')" :aria-pressed="band.enabled" :class="{ enabled: band.enabled }">{{ band.enabled ? t('wifi.enabled') : t('wifi.disabled') }}</button>
+            <button type="button" role="switch" class="radio-switch" @click="setRadio(band)" :disabled="loading || !!busyBand" :aria-label="band.band + ' Wi-Fi'" :aria-checked="band.enabled" :aria-busy="busyBand === band.interface"><span class="switch-thumb" /></button>
           </div>
         </header>
         <p class="band-state">{{ t('wifi.channel') }} {{ band.channel || '—' }}<span v-if="band.hidden"> · {{ t('wifi.hidden') }}</span></p>
@@ -120,58 +127,66 @@ onMounted(loadStatus)
           <label class="hidden-control"><input v-model="configDraft[band.interface].hidden" type="checkbox" />{{ t('wifi.hidden') }}</label>
           <div class="form-actions"><button type="button" @click="configOpen[band.interface] = false">{{ t('common.cancel') }}</button><button type="submit" :disabled="busyBand === band.interface">{{ busyBand === band.interface ? t('common.saving') : t('wifi.saveConfig') }}</button></div>
         </form>
-        <div class="clients">
-          <h4>{{ t('wifi.clients') }} <span>{{ band.clients_complete === false ? '—' : band.clients?.length || 0 }}</span></h4>
-          <p v-if="band.client_warnings?.length" class="client-warning" role="status">{{ t('wifi.clientWarning') }}: {{ band.client_warnings.join('; ') }}</p>
-          <div v-for="client in band.clients" :key="client.mac" class="client">
-            <dl>
-              <div><dt>{{ t('wifi.hostname') }}</dt><dd>{{ client.hostname || '—' }}</dd></div>
-              <div><dt>MAC</dt><dd class="address">{{ client.mac }}</dd></div>
-              <div><dt>IPv4</dt><dd class="address"><span v-for="ip in client.ipv4" :key="ip">{{ ip }}</span><span v-if="!client.ipv4?.length">—</span></dd></div>
-              <div><dt>IPv6</dt><dd class="address"><span v-for="ip in client.ipv6" :key="ip">{{ ip }}</span><span v-if="!client.ipv6?.length">—</span></dd></div>
-            </dl>
-          </div>
-          <p v-if="!band.clients?.length && band.clients_complete !== false" class="empty">{{ t('wifi.noClients') }}</p>
-        </div>
+
       </article>
     </div>
     <LanConfig />
+    <article v-if="supported && bands.length" class="wifi-card clients-card">
+      <h3>{{ t('wifi.clients') }} <span class="client-count">{{ clientsComplete ? clients.length : '—' }}</span></h3>
+      <p v-if="clientWarnings.length" class="client-warning" role="status">{{ t('wifi.clientWarning') }}: {{ clientWarnings.join('; ') }}</p>
+      <div v-for="client in clients" :key="client.interface + ':' + client.mac" class="client">
+        <header class="client-header"><h4>{{ client.hostname || '—' }}</h4><span class="client-band">{{ client.band }}</span></header>
+        <dl>
+          <div><dt>MAC</dt><dd class="address">{{ client.mac }}</dd></div>
+          <div><dt>IPv4</dt><dd class="address"><span v-for="ip in client.ipv4" :key="ip">{{ ip }}</span><span v-if="!client.ipv4?.length">—</span></dd></div>
+          <div><dt>IPv6</dt><dd class="address"><span v-for="ip in client.ipv6" :key="ip">{{ ip }}</span><span v-if="!client.ipv6?.length">—</span></dd></div>
+        </dl>
+      </div>
+      <p v-if="!clients.length && clientsComplete" class="empty">{{ t('wifi.noClients') }}</p>
+    </article>
   </section>
 </template>
 
 <style scoped>
-.wifi-page { display:grid; gap:16px; min-width:0; }
+.wifi-page { color:#1e293b; --wifi-surface:rgb(255 255 255 / .85); --wifi-muted:#475569; display:grid; gap:16px; min-width:0; }
+:global(html.dark .wifi-page) { color:#f1f5f9; color-scheme:dark; --wifi-surface:#1e293b; --wifi-muted:#cbd5e1; }
 .toolbar { display:flex; justify-content:flex-end; }
 .bands { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; align-items:start; }
-.wifi-card { min-width:0; border:1px solid rgb(148 163 184 / .25); border-radius:16px; padding:16px; background:rgb(255 255 255 / .65); }
-:global(.dark) .wifi-card { background:rgb(15 23 42 / .4); }
+.wifi-card { min-width:0; border:1px solid rgb(148 163 184 / .25); border-radius:16px; padding:16px; background:var(--wifi-surface); }
 .band-header { display:flex; flex-wrap:wrap; align-items:start; justify-content:space-between; gap:12px; }
 .band-name { min-width:0; flex:1 1 100px; overflow-wrap:anywhere; }
 h3 { font-size:16px; font-weight:700; } .band-name p { font-size:14px; margin-top:3px; }
-.actions, .form-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.actions, .form-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
 button { border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:7px 10px; font-size:13px; transition:background .15s; }
 button:hover:enabled { background:rgb(148 163 184 / .12); } button:disabled { opacity:.45; cursor:default; }
-button.enabled { color:#059669; background:rgb(16 185 129 / .1); border-color:rgb(16 185 129 / .3); }
-:global(.dark) button.enabled { color:#6ee7b7; }
+button.radio-switch { position:relative; flex:0 0 56px; width:56px; height:28px; padding:0; border:0; border-radius:999px; background:#cbd5e1; transition:background .15s; }
+:global(html.dark .wifi-page button.radio-switch) { background:rgb(255 255 255 / .2); }
+button.radio-switch[aria-checked=true] { background:#22c55e; }
+:global(html.dark .wifi-page button.radio-switch[aria-checked=true]) { background:#22c55e; }
+.switch-thumb { position:absolute; top:2px; left:2px; width:24px; height:24px; border-radius:50%; background:white; box-shadow:0 1px 3px rgb(0 0 0 / .15); transition:transform .15s; }
+.radio-switch[aria-checked=true] .switch-thumb { transform:translateX(28px); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
-.band-state { margin-top:10px; font-size:12px; opacity:.65; }
-.clients { margin-top:14px; border-top:1px solid rgb(148 163 184 / .2); padding-top:12px; }
-h4 { font-size:13px; font-weight:600; } h4 span { margin-left:5px; opacity:.6; font-weight:400; }
+.band-state { margin-top:10px; font-size:12px; color:var(--wifi-muted); }
+.client-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.client-header h4 { min-width:0; overflow-wrap:anywhere; }
+.client-band { flex-shrink:0; padding:3px 9px; border-radius:999px; background:rgb(148 163 184 / .12); color:var(--wifi-muted); font-size:12px; font-weight:500; }
+.client-count { margin-left:6px; color:var(--wifi-muted); font-size:13px; font-weight:400; }
+h4 { font-size:13px; font-weight:600; } h4 span { margin-left:5px; color:var(--wifi-muted); font-weight:400; }
 .client { padding:12px 0; border-bottom:1px solid rgb(148 163 184 / .15); }
 .client:last-child { border:0; padding-bottom:0; }
 dl { display:grid; gap:6px; font-size:13px; } dl > div { display:grid; grid-template-columns:60px minmax(0,1fr); gap:10px; }
-dt { opacity:.6; } dd { min-width:0; overflow-wrap:anywhere; user-select:text; } dd span { display:block; }
+dt { color:var(--wifi-muted); } dd { min-width:0; overflow-wrap:anywhere; user-select:text; } dd span { display:block; }
 .address { font-family:ui-monospace,SFMono-Regular,Consolas,monospace; font-size:12px; }
-.empty { margin-top:8px; font-size:13px; opacity:.55; }
+.empty { margin-top:8px; font-size:13px; color:var(--wifi-muted); }
 .client-warning { color:#b45309; font-size:12px; overflow-wrap:anywhere; margin-top:8px; }
-:global(.dark) .client-warning { color:#fbbf24; }
+:global(html.dark .wifi-page .client-warning) { color:#fbbf24; }
 .config-form { border-top:1px solid rgb(148 163 184 / .2); margin-top:14px; padding-top:14px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .config-form label { display:grid; gap:5px; font-size:13px; min-width:0; }
 .config-form input:not([type=checkbox]), select { width:100%; min-width:0; border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:8px 10px; background:transparent; }
-:global(.dark) option { background:#1e293b; }
+:global(html.dark .wifi-page option) { background:#1e293b; }
 .config-form .hidden-control { display:flex; align-items:center; gap:8px; }
 .form-actions { grid-column:1/-1; justify-content:flex-end; }
 @media (max-width:1100px) { .bands { grid-template-columns:minmax(0,1fr); } }
 @media (max-width:440px) { .wifi-card { padding:14px; } .config-form { grid-template-columns:minmax(0,1fr); } }
-@media (prefers-reduced-motion:reduce) { button { transition:none; } }
+@media (prefers-reduced-motion:reduce) { button, .switch-thumb { transition:none; } }
 </style>

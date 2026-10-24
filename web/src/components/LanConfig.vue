@@ -66,17 +66,17 @@ onMounted(load)
 </template>
 
 <style scoped>
-.lan-panel { border: 1px solid rgb(148 163 184 / .25); border-radius: 16px; padding: 16px; }
+.lan-panel { color:inherit; background:var(--wifi-surface); border: 1px solid rgb(148 163 184 / .25); border-radius: 16px; padding: 16px; }
 header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
 h3 { font-size:16px; font-weight:700; }
 button { border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:7px 12px; font-size:13px; }
 button:disabled { opacity:.45; cursor:default; }
 button:focus-visible, input:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
 dl { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:12px; font-size:13px; margin-bottom:14px; }
-dt { opacity:.65; margin-bottom:3px; } dd { overflow-wrap:anywhere; } dd span { display:block; }
+dt { color:var(--wifi-muted); margin-bottom:3px; } dd { overflow-wrap:anywhere; } dd span { display:block; }
 form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
 label { display:grid; flex:1 1 180px; gap:5px; font-size:13px; }
 input { width:100%; min-width:0; background:transparent; border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:8px 10px; }
 .save { background:#0284c7; color:white; padding:9px 14px; }
-.notice { font-size:12px; opacity:.65; margin-top:12px; line-height:1.6; }
+.notice { font-size:12px; color:var(--wifi-muted); margin-top:12px; line-height:1.6; }
 </style>
