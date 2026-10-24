@@ -44,6 +44,8 @@ static int g_ipv6_proxy_initialized = 0;
 static IPv6ProxyConfig g_current_config = {0};
 static guint g_send_timer_id = 0;
 static volatile int g_service_running = 0;
+static pthread_mutex_t g_last_sent_ipv6_mutex = PTHREAD_MUTEX_INITIALIZER;
+static char g_last_sent_ipv6[64] = {0};
 
 /* 子进程PID数组 */
 static pid_t g_rule_pids[IPV6_PROXY_MAX_RULES];
@@ -78,7 +80,7 @@ static void setup_send_timer(void);
 static void cancel_send_timer(void);
 static gboolean send_timer_callback(gpointer user_data);
 static gboolean send_startup_ipv6_callback(gpointer user_data);
-static void do_send_ipv6(int retry_on_fail);
+static void do_send_ipv6(int retry_on_fail, int only_if_changed);
 static int send_webhook_notification_with_result(const char *ipv6_addr);
 static void log_send_record(const char *ipv6_addr, const char *content,
                             const char *response, int result);
@@ -581,7 +583,7 @@ static int load_ipv6_proxy_config(void) {
 static gboolean send_timer_callback(gpointer user_data) {
   (void)user_data;
   printf("[IPv6Proxy] 定时器触发，发送IPv6地址\n");
-  do_send_ipv6(1); /* 失败重试 */
+  do_send_ipv6(1, 1); /* 失败重试；仅地址变化时发送 */
   return G_SOURCE_CONTINUE;
 }
 
@@ -589,7 +591,7 @@ static gboolean send_timer_callback(gpointer user_data) {
 static gboolean send_startup_ipv6_callback(gpointer user_data) {
   (void)user_data;
   printf("[IPv6Proxy] 设备已启动15秒，开始发送IPv6地址\n");
-  do_send_ipv6(1);        /* 失败重试 */
+  do_send_ipv6(1, 1);        /* 失败重试；仅地址变化时发送 */
   return G_SOURCE_REMOVE; /* 只执行一次 */
 }
 
@@ -808,7 +810,7 @@ static int send_webhook_notification_with_result(const char *ipv6_addr) {
   return result ? 0 : -1;
 }
 
-static void do_send_ipv6(int retry_on_fail) {
+static void do_send_ipv6(int retry_on_fail, int only_if_changed) {
   char ipv6_addr[64] = {0};
   int max_retries =
       retry_on_fail ? 30 : 1; /* 重试模式最多30次，每次10秒，共5分钟 */
@@ -830,8 +832,22 @@ static void do_send_ipv6(int retry_on_fail) {
 
     printf("[IPv6Proxy] 当前IPv6地址: %s\n", ipv6_addr);
 
-    /* 尝试发送 */
+    if (only_if_changed) {
+      pthread_mutex_lock(&g_last_sent_ipv6_mutex);
+      int unchanged = strcmp(g_last_sent_ipv6, ipv6_addr) == 0;
+      pthread_mutex_unlock(&g_last_sent_ipv6_mutex);
+      if (unchanged) {
+        printf("[IPv6Proxy] IPv6地址未变化，跳过Webhook发送\n");
+        return;
+      }
+    }
+
+    /* 尝试发送；失败时不更新基线，下轮继续重试 */
     if (send_webhook_notification_with_result(ipv6_addr) == 0) {
+      pthread_mutex_lock(&g_last_sent_ipv6_mutex);
+      strncpy(g_last_sent_ipv6, ipv6_addr, sizeof(g_last_sent_ipv6) - 1);
+      g_last_sent_ipv6[sizeof(g_last_sent_ipv6) - 1] = '\0';
+      pthread_mutex_unlock(&g_last_sent_ipv6_mutex);
       printf("[IPv6Proxy] Webhook发送成功\n");
       return;
     }
@@ -1363,13 +1379,13 @@ int ipv6_proxy_get_ipv6_addr(char *addr, size_t size) {
 
 int ipv6_proxy_send_now(void) {
   printf("[IPv6Proxy] 立即发送IPv6地址\n");
-  do_send_ipv6(1);
+  do_send_ipv6(1, 0);
   return 0;
 }
 
 int ipv6_proxy_test_send(void) {
   printf("[IPv6Proxy] 测试发送\n");
-  do_send_ipv6(0); /* 不重试 */
+  do_send_ipv6(0, 0); /* 不重试，手动测试始终发送 */
   return 0;
 }
 
