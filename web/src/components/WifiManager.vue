@@ -159,7 +159,7 @@ h3 { font-size:16px; font-weight:700; } .band-name p { font-size:14px; margin-to
 .actions, .form-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
 button { border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:7px 10px; font-size:13px; transition:background .15s; }
 button:hover:enabled { background:rgb(148 163 184 / .12); } button:disabled { opacity:.45; cursor:default; }
-button.radio-switch { position:relative; flex:0 0 56px; width:56px; height:28px; padding:0; border:0; border-radius:999px; background:#cbd5e1; transition:background .15s; }
+button.radio-switch { position:relative; flex:0 0 56px; width:56px; height:28px; min-height:28px; padding:0; border:0; border-radius:999px; background:#cbd5e1; transition:background .15s; }
 :global(html.dark .wifi-page button.radio-switch) { background:rgb(255 255 255 / .2); }
 button.radio-switch[aria-checked=true] { background:#22c55e; }
 :global(html.dark .wifi-page button.radio-switch[aria-checked=true]) { background:#22c55e; }
