@@ -181,6 +181,7 @@ function handlePasswordResetSuccess() {
 // 跳转到更新页面
 function handleGoUpdate() {
   activeMenu.value = 'update'
+  window.scrollTo(0, 0)
 }
 
 // 监听401事件
@@ -265,6 +266,7 @@ function toggleSidebar() {
 
 function handleMenuClick(menuId) {
   activeMenu.value = menuId
+  window.scrollTo(0, 0)
   if (isMobile.value) {
     sidebarOpen.value = false
     lockBodyScroll(false)
