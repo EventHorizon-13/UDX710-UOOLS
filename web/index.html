@@ -13,6 +13,8 @@
       let dark = true
       try { dark = localStorage.getItem('theme') !== 'light' } catch (_) {}
       document.documentElement.classList.toggle('dark', dark)
+      const standalone = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true
+      document.documentElement.classList.toggle('standalone-app', standalone)
       document.querySelector('meta[name="theme-color"]').content = dark ? '#0f172a' : '#f8fafc'
       document.querySelector('meta[name="color-scheme"]').content = dark ? 'dark' : 'light'
     })()

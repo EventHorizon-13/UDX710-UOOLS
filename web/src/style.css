@@ -29,6 +29,14 @@ main > header.safe-area-sticky {
   top: env(safe-area-inset-top, 0px);
 }
 
+/* iOS Home Screen may report a zero inset with a translucent status bar. */
+html.standalone-app body {
+  padding-top: max(env(safe-area-inset-top, 0px), 54px);
+}
+html.standalone-app main > header.safe-area-sticky {
+  top: max(env(safe-area-inset-top, 0px), 54px);
+}
+
 /* 滚动穿透锁定：侧边栏/弹窗打开时使用 */
 .body-lock {
   overflow: hidden !important;
