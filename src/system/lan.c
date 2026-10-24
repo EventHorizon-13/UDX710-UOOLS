@@ -424,6 +424,20 @@ static int web_subnet_rule(const LanConfig *v,int add) {
   }
   g_free(cidr);return ok;
 }
+/* Tagged NAT rules preserve Internet access for the selected LAN and the
+ * maintenance subnet even if the vendor keeps its old pool-specific rule. */
+static int nat_cidr_rule(const char *cidr,const char *tag,int add) {
+  char out[2048];int exists=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-t","nat","-C","POSTROUTING","-s",(char *)cidr,"-o","sipa_eth+","-m","comment","--comment",(char *)tag,"-j","MASQUERADE",NULL);
+  if(add && !exists)return !run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-t","nat","-A","POSTROUTING","-s",(char *)cidr,"-o","sipa_eth+","-m","comment","--comment",(char *)tag,"-j","MASQUERADE",NULL);
+  if(!add && exists)return !run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-t","nat","-D","POSTROUTING","-s",(char *)cidr,"-o","sipa_eth+","-m","comment","--comment",(char *)tag,"-j","MASQUERADE",NULL);
+  return 1;
+}
+static int nat_subnet_rule(const LanConfig *v,int add) {
+  char *cidr=address_cidr(v,1);int ok=!strcmp(cidr,LAN_RECOVERY_NET) || nat_cidr_rule(cidr,LAN_ADDRESS_TAG,add);g_free(cidr);return ok;
+}
+static int nat_recovery_rule(const LanConfig *v) {
+  char *cidr=address_cidr(v,1);int ok=nat_cidr_rule(LAN_RECOVERY_NET,"cw52-lan-recovery",strcmp(cidr,LAN_RECOVERY_NET)!=0);g_free(cidr);return ok;
+}
 static long long monotonic_seconds(void) { struct timespec t;if(clock_gettime(CLOCK_MONOTONIC,&t))return -1;return (long long)t.tv_sec; }
 static int read_small_file(const char *path,char **out,size_t limit) {
   struct stat st;gsize n=0;
@@ -481,6 +495,15 @@ static char *migration_rollback_script(const char *dir,const LanConfig *old,cons
   char *restore_old=strcmp(oldnet,LAN_RECOVERY_NET)?g_strdup_printf(
     "iptables -w 2 -C CW52_UDX_WEB -i tether -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN 2>/dev/null || "
     "iptables -w 2 -I CW52_UDX_WEB 1 -i tether -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN || exit 1\n",oldnet,oldnet):g_strdup("");
+  char *nat_remove=strcmp(newnet,LAN_RECOVERY_NET)?g_strdup_printf(
+    "iptables -w 2 -t nat -D POSTROUTING -s %s -o sipa_eth+ -m comment --comment " LAN_ADDRESS_TAG " -j MASQUERADE 2>/dev/null || :\n",newnet):g_strdup("");
+  char *nat_restore=strcmp(oldnet,LAN_RECOVERY_NET)?g_strdup_printf(
+    "iptables -w 2 -t nat -C POSTROUTING -s %s -o sipa_eth+ -m comment --comment " LAN_ADDRESS_TAG " -j MASQUERADE 2>/dev/null || "
+    "iptables -w 2 -t nat -A POSTROUTING -s %s -o sipa_eth+ -m comment --comment " LAN_ADDRESS_TAG " -j MASQUERADE || exit 1\n",oldnet,oldnet):g_strdup("");
+  const char *nat_recovery=strcmp(oldnet,LAN_RECOVERY_NET)?
+    "iptables -w 2 -t nat -C POSTROUTING -s " LAN_RECOVERY_NET " -o sipa_eth+ -m comment --comment cw52-lan-recovery -j MASQUERADE 2>/dev/null || "
+    "iptables -w 2 -t nat -A POSTROUTING -s " LAN_RECOVERY_NET " -o sipa_eth+ -m comment --comment cw52-lan-recovery -j MASQUERADE || exit 1\n":
+    "iptables -w 2 -t nat -D POSTROUTING -s " LAN_RECOVERY_NET " -o sipa_eth+ -m comment --comment cw52-lan-recovery -j MASQUERADE 2>/dev/null || :\n";
   char *remove_addr=strcmp(oldcidr,newcidr)?g_strdup_printf("ip -4 address del %s dev tether 2>/dev/null || :\n",newcidr):g_strdup("");
   char *s=g_strdup_printf(
     "#!/bin/sh\nD='%s'\ncd \"$D\" || exit 1\n"
@@ -498,13 +521,13 @@ static char *migration_rollback_script(const char *dir,const LanConfig *old,cons
     " iptables -w 2 -N " DHCP_CHAIN " 2>/dev/null || :\n"
     " iptables -w 2 -C " DHCP_CHAIN " -j DROP 2>/dev/null || iptables -w 2 -A " DHCP_CHAIN " -j DROP || exit 1\n"
     " iptables -w 2 -C INPUT -i tether -p udp --dport 67 -j " DHCP_CHAIN " 2>/dev/null || iptables -w 2 -I INPUT 1 -i tether -p udp --dport 67 -j " DHCP_CHAIN " || exit 1\nfi\n%s%s"
-    "[ $ok -eq 1 ] || exit 1\n"
+    "%s%s%s[ $ok -eq 1 ] || exit 1\n"
     "dbus-send --system --print-reply --reply-timeout=4000 --dest=net.connman " LAN_TECH
     " net.connman.Technology.GetProperties 2>/dev/null | grep -F '%s' >/dev/null || exit 1\n"
     "echo restored > restored\nsync\nrm -f " LAN_PENDING "\n"
     "[ \"$(cat /run/udx710-lan.lock 2>/dev/null)\" != \"$D\" ] || rm -f /run/udx710-lan.lock\n",
-    dir,value,oldcidr,remove_addr,remove_new,restore_old,value);
-  g_free(value);g_free(oldcidr);g_free(newcidr);g_free(oldnet);g_free(newnet);g_free(remove_new);g_free(restore_old);g_free(remove_addr);return s;
+    dir,value,oldcidr,remove_addr,remove_new,restore_old,nat_remove,nat_restore,nat_recovery,value);
+  g_free(value);g_free(oldcidr);g_free(newcidr);g_free(oldnet);g_free(newnet);g_free(remove_new);g_free(restore_old);g_free(remove_addr);g_free(nat_remove);g_free(nat_restore);return s;
 }
 static int migration_rollback(const char *dir) {
   char *path=g_build_filename(dir,"rollback.sh",NULL),out[2048];int ok=!run_command(out,sizeof(out),"/bin/sh",path,"--now",NULL);g_free(path);return ok;
@@ -575,9 +598,9 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   prepared=1;g_free(path);path=NULL;struct stat private={.st_mode=0600,.st_uid=geteuid(),.st_gid=getegid()};
   if(!atomic_file(LAN_PENDING,dir,strlen(dir),&private))goto failed;pending=1;
   patched=g_key_file_to_data(kf,&plen,NULL);if(!patched||!atomic_file(LAN_FILE,patched,plen,&st)||!web_subnet_rule(&next,1))goto failed;
-  if(!apply_live(&next)||!ensure_recovery()||!web_subnet_rule(&next,1)||!dhcp_rules_apply(dhcp_before.desired)||!read_live(&actual)||!same_config(&actual,&next)||!lan_address_present(&next)||!management_reachable(&next))goto failed;
+  if(!apply_live(&next)||!ensure_recovery()||!web_subnet_rule(&next,1)||!nat_subnet_rule(&next,1)||!nat_recovery_rule(&next)||!dhcp_rules_apply(dhcp_before.desired)||!read_live(&actual)||!same_config(&actual,&next)||!lan_address_present(&next)||!management_reachable(&next))goto failed;
   char *oldnet=address_cidr(&old,1),*newnet=address_cidr(&next,1);int same_net=!strcmp(oldnet,newnet);g_free(oldnet);g_free(newnet);
-  if(!same_net && !web_subnet_rule(&old,0))goto failed;
+  if(!same_net && (!web_subnet_rule(&old,0)||!nat_subnet_rule(&old,0)))goto failed;
   /* The independent watchdog keeps the lock until confirmation from new IP. */
   HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"Open the new IPv4 address and confirm within two minutes\"}");goto cleanup;
 failed:
@@ -593,7 +616,7 @@ done:free(address);free(mask);free(start);free(end);free(version);
 void lan_address_init(void) {
   AddressMigration m;int pending=read_migration(&m);
   if(pending==1 && (!m.same_boot || monotonic_seconds()>=m.deadline))migration_rollback(m.dir);
-  LanConfig v;if(read_live(&v)) { if(!ensure_recovery()||!web_subnet_rule(&v,1))fprintf(stderr,"LAN maintenance address/policy restore failed\n"); }
+  LanConfig v;if(read_live(&v)) { if(!ensure_recovery()||!web_subnet_rule(&v,1)||!nat_subnet_rule(&v,1)||!nat_recovery_rule(&v))fprintf(stderr,"LAN maintenance address/policy restore failed\n"); }
 }
 
 static void lan_status(struct mg_connection *c) {

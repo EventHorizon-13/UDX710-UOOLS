@@ -187,3 +187,9 @@ maintenance-only alias restoration, and generated rollback with fake network
 tools plus real filesystem locks (including failed setter and confirm/timeout
 races). Production installation and validation do not imply a real address
 migration or a device reboot has been performed.
+
+Tagged source-NAT rules cover only the selected private LAN and the retained
+maintenance subnet, and only outbound cellular `sipa_eth+` interfaces. They are
+reconciled on apply/startup and restored on rollback without flushing vendor NAT
+chains or changing the cellular default route. A tagged 6677 allow rule also
+requires ingress on `tether`, so a matching cellular-side source cannot use it.
