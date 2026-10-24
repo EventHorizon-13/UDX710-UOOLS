@@ -20,8 +20,8 @@ Deliberately omitted write controls:
   allows `192.168.1.0/24`. A subnet migration would also require changes to those
   independently maintained entry points and the NAS management route. This API
   rejects address/mask fields and preserves both in every write.
-* DHCP enable/disable: this firmware exposes `Tethering`, which also controls the
-  USB/LAN transport; no independently confirmed DHCP-only switch was found.
+* The vendor `Tethering` switch also controls USB/LAN transport and is never used
+  as a DHCP switch. The independent LAN DHCP gate is described below.
 * Lease time: the only vendor field is `ttl=0`; its meaning/unit and treatment of
   zero were not established. It is preserved verbatim and not labeled lease time.
 * Default gateway: the default route is cellular `default dev sipa_eth0 scope
@@ -107,3 +107,39 @@ The Python adapter tests mock process discovery, executable lookup, signals,
 waits and the vendor CLI; they do not touch a running access point.
 WiFi settings call hostapd directly; LAN DHCP calls ConnMan directly. Neither
 setter calls mm_app_service, but stopping that service was not tested.
+
+## LAN DHCP switch
+
+`GET /api/lan` includes `dhcp.supported`, `enabled`, `saved_enabled`,
+`consistent`, and a boot-scoped state `version`. `POST /api/lan` accepts
+`{"action":"dhcp","enabled":false,"version":"<fresh version>","confirm":true}`.
+The request parser rejects extra/duplicate keys and non-boolean switches.
+
+The switch controls CW52's IPv4 DHCP allocation on the shared `tether` LAN
+(Ethernet, WiFi and USB). Off installs only an INPUT UDP destination-port 67
+gate on that interface, using its own `CW52_LAN_DHCP` chain. On removes that gate.
+ConnMan, Tethering, the bridge, addresses, routes, WiFi and management listeners
+remain running. Existing leases are not revoked. New clients and renewals need
+another reachable DHCP server or manual configuration while off. IPv6 addressing
+is outside this switch. A server-side DHCP process can still listen on UDP67:
+that alone does not mean it can allocate addresses through the closed gate.
+
+A real DHCPDISCOVER-only probe (no DHCPREQUEST or interface reconfiguration)
+confirmed one offer with the gate open, none while closed, and offers again after
+removal on the CW52 firmware. The filter does not block forwarded DHCP exchanges
+with a different server on a genuinely bridged LAN.
+
+Before applying, the API checks original management endpoints and creates a
+private durable `dhcp-switch-*` recovery directory under
+`/mnt/data/local-udx710/`. A standalone 30-second rollback script survives server
+exit. Runtime rules, persistence and management reachability must pass readback
+before `committed` is written. Failed changes restore the prior state; incomplete
+recovery retains the shared LAN lock. Inspect the directory and run
+`sh rollback.sh --now` to recover manually. Never flush INPUT or unrelated chains.
+Unknown/partial/foreign rules are treated as unavailable, not overwritten.
+
+The desired setting is stored atomically in `lan-dhcp.state` under the same
+userdata directory and restored during backend startup. Absence defaults to
+DHCP enabled without firewall writes. Restoring a saved disabled setting on
+backend startup is supported; whole-device reboot still requires hardware
+verification. Saved/runtime disagreement is explicitly shown and blocks changes.

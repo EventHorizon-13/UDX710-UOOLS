@@ -18,6 +18,7 @@
 #include "http_utils.h"
 #include "json_builder.h"
 #include "lan.h"
+#include "exec_utils.h"
 
 #define LAN_FILE "/var/mm/dhcp_config.ini"
 #define LAN_BACKUPS "/mnt/data/local-udx710"
@@ -191,11 +192,187 @@ static int valid_request(struct mg_str body) {
   return (seen & 15) == 15;
 }
 
+/* The vendor DHCP server shares tether across Ethernet, WiFi and USB. Gate
+ * only requests delivered to this host; never stop ConnMan or Tethering. */
+#define DHCP_STATE LAN_BACKUPS "/lan-dhcp.state"
+#define DHCP_CHAIN "CW52_LAN_DHCP"
+#define DHCP_JUMP "-A INPUT -i tether -p udp -m udp --dport 67 -j " DHCP_CHAIN
+#define DHCP_IPTABLES "/usr/sbin/iptables"
+typedef struct { int actual, desired, had_file; char version[65]; } DhcpState;
+
+/* Refuse foreign/partial rules rather than overwriting an unrelated chain. */
+static int dhcp_parse_rules(const char *rules, int *enabled) {
+  char **lines = g_strsplit(rules,"\n",-1); int chain=0,drop=0,jump=0,bad=0;
+  for (char **p=lines;*p;p++) {
+    if (!strcmp(*p,"-N " DHCP_CHAIN)) chain++;
+    else if (!strcmp(*p,"-A " DHCP_CHAIN " -j DROP")) drop++;
+    else if (!strcmp(*p,DHCP_JUMP)) jump++;
+    else if (strstr(*p,DHCP_CHAIN)) bad=1;
+  }
+  g_strfreev(lines);
+  if (bad || chain>1 || drop>1 || jump>1) return 0;
+  if (!chain && !drop && !jump) { *enabled=1; return 1; }
+  if (chain==1 && drop==1 && jump==1) { *enabled=0; return 1; }
+  return 0;
+}
+
+static int dhcp_read(DhcpState *s) {
+  char output[16384]; memset(s,0,sizeof(*s)); s->desired=1;
+  if (run_command(output,sizeof(output),DHCP_IPTABLES,"-w","2","-S",NULL) ||
+      strlen(output)>=sizeof(output)-1 || !dhcp_parse_rules(output,&s->actual)) return 0;
+  char *text=NULL; gsize n=0;
+  if (g_file_get_contents(DHCP_STATE,&text,&n,NULL)) {
+    s->had_file=1;
+    if (n==8 && !memcmp(text,"enabled\n",8)) s->desired=1;
+    else if (n==9 && !memcmp(text,"disabled\n",9)) s->desired=0;
+    else { g_free(text); return 0; }
+    g_free(text);
+  } else if (access(DHCP_STATE,F_OK)==0 || errno!=ENOENT) return 0;
+  char *boot=NULL; g_file_get_contents("/proc/sys/kernel/random/boot_id",&boot,NULL,NULL);
+  char *input=g_strdup_printf("v1:%d:%d:%d:%s",s->actual,s->desired,s->had_file,boot?boot:"");
+  char *hash=g_compute_checksum_for_string(G_CHECKSUM_SHA256,input,-1);
+  g_strlcpy(s->version,hash,sizeof(s->version)); g_free(hash); g_free(input); g_free(boot);
+  return 1;
+}
+
+static int dhcp_rules_apply(int enabled) {
+  char out[16384]; int actual;
+  if (run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-S",NULL) ||
+      !dhcp_parse_rules(out,&actual)) return 0;
+  if (actual==enabled) return 1;
+  if (!enabled) {
+    if (run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-N",DHCP_CHAIN,NULL) ||
+        run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-A",DHCP_CHAIN,"-j","DROP",NULL) ||
+        run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-I","INPUT","1","-i","tether","-p","udp","--dport","67","-j",DHCP_CHAIN,NULL)) return 0;
+  } else {
+    if (run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-D","INPUT","-i","tether","-p","udp","--dport","67","-j",DHCP_CHAIN,NULL) ||
+        run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-F",DHCP_CHAIN,NULL) ||
+        run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-X",DHCP_CHAIN,NULL)) return 0;
+  }
+  return !run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-S",NULL) &&
+    dhcp_parse_rules(out,&actual) && actual==enabled;
+}
+
+static int dhcp_valid_request(struct mg_str body) {
+  int len=0;
+  if (body.len>1024 || mg_json_get(body,"$",&len)!=0 || (size_t)len!=body.len || body.buf[0]!='{') return 0;
+  const char *names[]={"\"action\"","\"enabled\"","\"version\"","\"confirm\""};
+  unsigned seen=0; size_t off=0; struct mg_str key,val;
+  while ((off=mg_json_next(body,off,&key,&val))) {
+    int which=-1;
+    for (int i=0;i<4;i++) if (!mg_strcmp(key,mg_str(names[i]))) which=i;
+    if (which<0 || (seen&(1U<<which))) return 0;
+    seen|=1U<<which;
+    if (which==1 || which==3) {
+      if (mg_strcmp(val,mg_str("true")) && mg_strcmp(val,mg_str("false"))) return 0;
+    } else {
+      if (val.len<2 || val.buf[0]!='"' || val.buf[val.len-1]!='"') return 0;
+      for (size_t i=1;i+1<val.len;i++) if (val.buf[i]=='\\' || (unsigned char)val.buf[i]<32) return 0;
+    }
+  }
+  char *action=mg_json_get_str(body,"$.action"); int ok=seen==15 && action && !strcmp(action,"dhcp"); free(action);
+  return ok;
+}
+
+/* Durable, self-contained rollback does not depend on the server process. */
+static char *dhcp_watchdog_script(const DhcpState *old) {
+  const char *restore_rules=old->actual ?
+    "iptables -w 2 -D INPUT -i tether -p udp --dport 67 -j " DHCP_CHAIN " 2>/dev/null || :\n"
+    "iptables -w 2 -F " DHCP_CHAIN " 2>/dev/null || :\n"
+    "iptables -w 2 -X " DHCP_CHAIN " 2>/dev/null || :\n" :
+    "iptables -w 2 -N " DHCP_CHAIN " 2>/dev/null || :\n"
+    "iptables -w 2 -F " DHCP_CHAIN " && iptables -w 2 -A " DHCP_CHAIN " -j DROP\n"
+    "iptables -w 2 -C INPUT -i tether -p udp --dport 67 -j " DHCP_CHAIN " 2>/dev/null || "
+    "iptables -w 2 -I INPUT 1 -i tether -p udp --dport 67 -j " DHCP_CHAIN "\n";
+  const char *restore_file=old->had_file ?
+    "cp -p state.before " DHCP_STATE ".rollback && mv -f " DHCP_STATE ".rollback " DHCP_STATE "\n" :
+    "rm -f " DHCP_STATE "\n";
+  return g_strdup_printf("#!/bin/sh\ncd \"$(dirname \"$0\")\" || exit 1\n"
+    "if [ \"$1\" != --now ]; then n=0; while [ $n -lt 30 ]; do [ ! -e committed ] || exit 0; sleep 1; n=$((n+1)); done; fi\n"
+    "%s%s"
+    "sync\n",restore_rules,restore_file);
+}
+
+static int dhcp_run_rollback(const char *dir) {
+  char *path=g_build_filename(dir,"rollback.sh",NULL),out[1024];
+  int ok=!run_command(out,sizeof(out),"/bin/sh",path,"--now",NULL); g_free(path); return ok;
+}
+
+static void dhcp_save(struct mg_connection *c, struct mg_http_message *hm) {
+  if (!dhcp_valid_request(hm->body)) { HTTP_ERROR(c,400,"invalid DHCP switch request"); return; }
+  bool enabled=false,confirm=false; char *version=mg_json_get_str(hm->body,"$.version");
+  mg_json_get_bool(hm->body,"$.enabled",&enabled); mg_json_get_bool(hm->body,"$.confirm",&confirm);
+  DhcpState old,actual; LanConfig lan;
+  if (!confirm) { HTTP_ERROR(c,400,"explicit confirmation required"); goto done; }
+  if (!dhcp_read(&old) || !read_live(&lan)) { HTTP_ERROR(c,503,"DHCP state unavailable; no changes applied"); goto done; }
+  if (!version || strcmp(version,old.version)) { HTTP_ERROR(c,409,"DHCP state changed; refresh before switching"); goto done; }
+  if (old.actual!=old.desired) { HTTP_ERROR(c,409,"DHCP saved and runtime state differ; inspect recovery"); goto done; }
+  if (old.actual==enabled) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"unchanged\"}"); goto done; }
+  if (!management_reachable(&lan)) { HTTP_ERROR(c,409,"management connection check failed; no changes applied"); goto done; }
+  int lock=open("/run/udx710-lan.lock",O_WRONLY|O_CREAT|O_EXCL,0600);
+  if (lock<0) { HTTP_ERROR(c,409,"LAN save locked; inspect recovery before retrying"); goto done; }
+  close(lock);
+  char *dir=NULL,*script=NULL,*path=NULL; int prepared=0,ok=0; pid_t pid=-1;
+  struct stat st={.st_mode=0600,.st_uid=geteuid(),.st_gid=getegid()},mnt,parent;
+  if (stat("/mnt/data",&mnt) || stat("/mnt",&parent) || mnt.st_dev==parent.st_dev) goto failed;
+  dir=g_strdup(LAN_BACKUPS "/dhcp-switch-XXXXXX"); if (!mkdtemp(dir)) goto failed;
+  if (old.had_file) {
+    path=g_build_filename(dir,"state.before",NULL);
+    const char *value=old.desired?"enabled\n":"disabled\n";
+    ok=atomic_file(path,value,strlen(value),&st);g_free(path);path=NULL;if (!ok) goto failed;
+  }
+  script=dhcp_watchdog_script(&old); path=g_build_filename(dir,"rollback.sh",NULL);
+  st.st_mode=0700;ok=atomic_file(path,script,strlen(script),&st);if (!ok) goto failed;
+  pid=fork();
+  if (pid<0) goto failed;
+  if (!pid) {
+    setsid();int fd=open("/dev/null",O_RDWR);
+    if (fd>=0) { dup2(fd,0);dup2(fd,1);dup2(fd,2);if(fd>2)close(fd); }
+    execl("/bin/sh","sh",path,(char *)NULL);_exit(127);
+  }
+  prepared=1;g_free(path);path=NULL;
+  if (!dhcp_rules_apply(enabled) || !management_reachable(&lan)) goto failed;
+  const char *value=enabled?"enabled\n":"disabled\n";st.st_mode=0600;
+  if (!atomic_file(DHCP_STATE,value,strlen(value),&st) || !dhcp_read(&actual) ||
+      actual.actual!=enabled || actual.desired!=enabled) goto failed;
+  path=g_build_filename(dir,"committed",NULL);
+  if (!atomic_file(path,"verified\n",9,&st)) { unlink(path);goto failed; }
+  unlink("/run/udx710-lan.lock");
+  HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"LAN DHCP setting saved and verified\"}");goto cleanup;
+failed:
+  if (prepared) {
+    int restored=dhcp_run_rollback(dir) && dhcp_read(&actual) && actual.actual==old.actual && actual.desired==old.desired;
+    /* Let the watchdog retry an incomplete recovery. */
+    if (restored) {
+      g_free(path);path=g_build_filename(dir,"committed",NULL);st.st_mode=0600;
+      if (atomic_file(path,"restored\n",9,&st)) unlink("/run/udx710-lan.lock");
+    }
+    HTTP_ERROR(c,500,restored?"DHCP change failed; previous state restored":"DHCP change failed; recovery watchdog will retry");
+  } else { unlink("/run/udx710-lan.lock");HTTP_ERROR(c,500,"DHCP recovery preparation failed; no changes applied"); }
+cleanup:
+  g_free(path);g_free(script);g_free(dir);
+done:
+  free(version);
+}
+
+void lan_dhcp_init(void) {
+  DhcpState s;
+  if (dhcp_read(&s) && s.had_file && s.actual!=s.desired && !dhcp_rules_apply(s.desired))
+    fprintf(stderr,"LAN DHCP restore failed; inspect saved/runtime state\n");
+}
+
 static void lan_status(struct mg_connection *c) {
   LanConfig v;
   int supported = read_live(&v);
   JsonBuilder *j = json_new(); json_obj_open(j); json_add_int(j,"Code",0);
   json_key_obj_open(j,"Data"); json_add_bool(j,"supported",supported);
+  DhcpState dhcp; int dhcp_ok=supported && dhcp_read(&dhcp);
+  json_key_obj_open(j,"dhcp");json_add_bool(j,"supported",dhcp_ok);
+  if (dhcp_ok) {
+    json_add_bool(j,"enabled",dhcp.actual);json_add_bool(j,"saved_enabled",dhcp.desired);
+    json_add_bool(j,"consistent",dhcp.actual==dhcp.desired);json_add_str(j,"version",dhcp.version);
+  }
+  json_obj_close(j);
   if (supported) {
     json_add_str(j,"interface","tether"); json_add_str(j,"address",v.address); json_add_str(j,"netmask",v.mask);
     uint32_t mask; ipv4(v.mask,&mask); int prefix = 0; for (;mask;mask <<= 1) prefix++;
@@ -292,6 +469,10 @@ done:
 void handle_lan(struct mg_connection *c, struct mg_http_message *hm) {
   HTTP_CHECK_ANY(c,hm);
   if (http_is_method(hm,"GET")) lan_status(c);
-  else if (http_is_method(hm,"POST")) lan_save(c,hm);
+  else if (http_is_method(hm,"POST")) {
+    char *action=mg_json_get_str(hm->body,"$.action");
+    if (action && !strcmp(action,"dhcp")) dhcp_save(c,hm); else lan_save(c,hm);
+    free(action);
+  }
   else http_method_error(c);
 }

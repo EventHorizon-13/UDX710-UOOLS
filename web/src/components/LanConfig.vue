@@ -42,6 +42,25 @@ async function save() {
   } finally { busy.value = false }
 }
 
+async function toggleDhcp() {
+  const enabled = !state.value.dhcp.enabled
+  if (!window.confirm(t(enabled ? 'lan.confirmDhcpOn' : 'lan.confirmDhcpOff'))) return
+  busy.value = true
+  try {
+    const response = await authFetch('/api/lan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'dhcp', enabled, version: state.value.dhcp.version, confirm: true })
+    })
+    const result = await response.json()
+    if (!response.ok || result.Code !== 0) throw new Error(result.error || result.Error || response.status)
+    success(t(enabled ? 'lan.dhcpOn' : 'lan.dhcpOff'))
+    await load()
+  } catch (err) {
+    showError(t('lan.saveError') + ': ' + err.message)
+    await load()
+  } finally { busy.value = false }
+}
+
 onMounted(load)
 </script>
 
@@ -55,6 +74,17 @@ onMounted(load)
         <div><dt>{{ t('lan.netmask') }}</dt><dd>{{ state.netmask }}</dd></div>
         <div><dt>{{ t('lan.dns') }}</dt><dd><span v-for="ip in state.dns" :key="ip">{{ ip }}</span><span v-if="!state.dns?.length">—</span></dd></div>
       </dl>
+      <div class="dhcp-row">
+        <div><span class="dhcp-label">{{ t('lan.dhcp') }}</span><p>{{ t('lan.dhcpScope') }}</p></div>
+        <button type="button" class="dhcp-switch" role="switch" :aria-label="t('lan.dhcp')"
+          :aria-checked="state.dhcp?.supported ? state.dhcp.enabled : false"
+          :class="{ on: state.dhcp?.supported && state.dhcp.enabled }"
+          :disabled="busy || !state.dhcp?.supported || !state.dhcp.consistent" @click="toggleDhcp">
+          <span></span>
+        </button>
+      </div>
+      <p v-if="!state.dhcp?.supported || !state.dhcp.consistent" class="dhcp-warning" role="status">{{ t('lan.dhcpUnavailable') }}</p>
+      <p v-else-if="!state.dhcp.enabled" class="notice dhcp-off" role="status">{{ t('lan.dhcpOffNotice') }}</p>
       <form @submit.prevent="save">
         <label>{{ t('lan.poolStart') }}<input v-model="start" required inputmode="decimal" autocomplete="off" :disabled="busy || !state.pool_writable" /></label>
         <label>{{ t('lan.poolEnd') }}<input v-model="end" required inputmode="decimal" autocomplete="off" :disabled="busy || !state.pool_writable" /></label>
@@ -78,5 +108,15 @@ form { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
 label { display:grid; flex:1 1 180px; gap:5px; font-size:13px; }
 input { width:100%; min-width:0; background:transparent; border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:8px 10px; }
 .save { background:#0284c7; color:white; padding:9px 14px; }
+.dhcp-row { display:flex; align-items:center; justify-content:space-between; gap:16px; margin:4px 0 14px; }
+.dhcp-label { font-size:14px; font-weight:600; }
+.dhcp-row p { margin:3px 0 0; color:var(--wifi-muted); font-size:12px; line-height:1.5; }
+button.dhcp-switch { position:relative; flex:0 0 48px; width:48px; height:26px; min-height:26px; padding:0; border:0; border-radius:999px; background:#64748b; transition:background .18s ease; }
+button.dhcp-switch.on { background:#0284c7; }
+.dhcp-switch span { display:block; position:absolute; top:3px; left:3px; width:20px; height:20px; border-radius:50%; background:white; box-shadow:0 1px 3px rgb(0 0 0 / .18); transition:transform .18s ease; }
+.dhcp-switch.on span { transform:translateX(22px); }
+.dhcp-warning { color:#d97706; font-size:12px; margin-bottom:12px; }
+.notice.dhcp-off { margin:0 0 12px; }
+@media (prefers-reduced-motion:reduce) { button.dhcp-switch,.dhcp-switch span { transition:none; } }
 .notice { font-size:12px; color:var(--wifi-muted); margin-top:12px; line-height:1.6; }
 </style>

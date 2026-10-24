@@ -5,6 +5,7 @@
 
 #include "http_server.h"
 #include "netif.h"
+#include "lan.h"
 #include "ofono.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -34,6 +35,8 @@ int main(int argc, char *argv[]) {
   /* 启动数据连接监听（无论当前状态） */
   printf("启动数据连接监听...\n");
   ofono_start_data_monitor();
+
+  lan_dhcp_init();
 
   /* 启动 HTTP 服务器 */
   if (http_server_start(port) != 0) {
