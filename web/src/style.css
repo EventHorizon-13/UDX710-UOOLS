@@ -11,6 +11,11 @@ html {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* Match Safari chrome, overscroll and both safe areas to the current page theme. */
+html { --page-background:#f8fafc; background-color:var(--page-background); color-scheme:light; }
+html.dark { --page-background:#0f172a; color-scheme:dark; }
+body { background-color:var(--page-background); }
+
 /* 安全区域适配（刘海屏、底部横条） */
 body {
   padding-top: env(safe-area-inset-top);

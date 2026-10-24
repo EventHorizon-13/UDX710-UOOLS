@@ -221,11 +221,10 @@ function initTheme() {
 
 // 应用主题到DOM
 function applyTheme() {
-  if (isDark.value) {
-    document.documentElement.classList.add('dark')
-  } else {
-    document.documentElement.classList.remove('dark')
-  }
+  const dark = isDark.value
+  document.documentElement.classList.toggle('dark', dark)
+  document.querySelector('meta[name="theme-color"]').content = dark ? '#0f172a' : '#f8fafc'
+  document.querySelector('meta[name="color-scheme"]').content = dark ? 'dark' : 'light'
 }
 
 // 切换主题
