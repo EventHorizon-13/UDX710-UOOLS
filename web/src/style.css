@@ -4,9 +4,9 @@
 
 /* ========== 移动端适配基础样式 ========== */
 
-/* 根字体设置：16px基准，确保rem单位正确计算 */
+/* Compact default type and controls; rem keeps the interface proportional. */
 html {
-  font-size: 16px;
+  font-size: 14px;
   -webkit-text-size-adjust: 100%;
   -webkit-tap-highlight-color: transparent;
 }
@@ -44,8 +44,8 @@ a,
 input[type="checkbox"],
 input[type="radio"],
 select {
-  min-height: 44px;
-  min-width: 44px;
+  min-height: 36px;
+  min-width: 36px;
 }
 
 /* 表单控件移动端优化 */
@@ -69,13 +69,8 @@ input[type="tel"] {
   }
 }
 
-/* 小屏手机优化 (320px-375px) */
-@media screen and (max-width: 374px) {
-  html {
-    font-size: 14px;
-  }
-  .text-xs { font-size: 0.7rem; }
-  .text-sm { font-size: 0.8rem; }
+/* Compact spacing on phones without shrinking form text below the iOS zoom threshold. */
+@media screen and (max-width: 767px) {
   .p-4 { padding: 0.75rem; }
   .p-6 { padding: 1rem; }
   .space-x-4 > * + * { margin-left: 0.75rem; }

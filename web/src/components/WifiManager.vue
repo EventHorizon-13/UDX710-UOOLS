@@ -158,12 +158,12 @@ h3 { font-size:16px; font-weight:700; } .band-name p { font-size:14px; margin-to
 .actions, .form-actions { display:flex; flex-wrap:wrap; align-items:center; gap:12px; }
 button { border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:7px 10px; font-size:13px; transition:background .15s; }
 button:hover:enabled { background:rgb(148 163 184 / .12); } button:disabled { opacity:.45; cursor:default; }
-button.radio-switch { position:relative; flex:0 0 56px; width:56px; height:28px; min-height:28px; padding:0; border:0; border-radius:999px; background:#cbd5e1; transition:background .15s; }
+button.radio-switch { position:relative; flex:0 0 3.5rem; width:3.5rem; height:1.75rem; min-height:1.75rem; padding:0; border:0; border-radius:999px; background:#cbd5e1; transition:background .15s; }
 :global(html.dark .wifi-page button.radio-switch) { background:rgb(255 255 255 / .2); }
 button.radio-switch[aria-checked=true] { background:#22c55e; }
 :global(html.dark .wifi-page button.radio-switch[aria-checked=true]) { background:#22c55e; }
-.switch-thumb { position:absolute; top:2px; left:2px; width:24px; height:24px; border-radius:50%; background:white; box-shadow:0 1px 3px rgb(0 0 0 / .15); transition:transform .15s; }
-.radio-switch[aria-checked=true] .switch-thumb { transform:translateX(28px); }
+.switch-thumb { position:absolute; top:.125rem; left:.125rem; width:1.5rem; height:1.5rem; border-radius:50%; background:white; box-shadow:0 1px 3px rgb(0 0 0 / .15); transition:transform .15s; }
+.radio-switch[aria-checked=true] .switch-thumb { transform:translateX(1.75rem); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
 .band-title { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; }
 .band-title h3 { flex-shrink:0; }
