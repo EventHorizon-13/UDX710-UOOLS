@@ -155,8 +155,10 @@ join two physical LANs. IPv6 and cellular default routes are not configured here
 `pool_start`, `pool_end`, a fresh `version` and `confirm:true`.
 `validate_only:true` validates without writes, locks, ARP probing or migration.
 Router/network/broadcast conflicts, the maintenance address inside the pool,
-other local interface networks and noncanonical/extra/duplicate fields are
-rejected. The real save also probes the currently reachable LAN with ARP DAD.
+overlapping prefixes on other local interfaces and noncanonical/extra/duplicate
+fields are rejected. For example, a cellular interface using 10.192.11.252/8
+overlaps 10.0.0.0/24. The real save also probes the currently reachable LAN
+with ARP DAD.
 
 Recovery is prepared under userdata before applying. The old persistent file,
 configurations, boot ID, deadline and independent executable rollback are saved
