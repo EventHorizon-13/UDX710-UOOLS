@@ -24,6 +24,11 @@ body {
   padding-right: env(safe-area-inset-right);
 }
 
+/* Keep the sticky dashboard bar below iOS status-bar safe area while scrolling. */
+main > header.safe-area-sticky {
+  top: env(safe-area-inset-top, 0px);
+}
+
 /* 滚动穿透锁定：侧边栏/弹窗打开时使用 */
 .body-lock {
   overflow: hidden !important;

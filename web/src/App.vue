@@ -625,7 +625,7 @@ onUnmounted(() => {
       :class="isMobile ? 'ml-0' : (sidebarCollapsed ? 'ml-20' : 'ml-64')"
     >
       <!-- 顶部状态栏 -->
-      <header class="sticky top-0 z-30 px-3 md:px-6 py-2 md:py-4">
+      <header class="sticky top-0 safe-area-sticky z-30 px-3 md:px-6 py-2 md:py-4">
         <div class="bg-white/90 dark:bg-white/10 backdrop-blur-xl rounded-xl md:rounded-2xl border border-slate-200/70 dark:border-white/10 px-3 md:px-6 py-3 md:py-4 shadow-lg shadow-slate-200/30 dark:shadow-black/20 transition-all duration-500">
           <div class="flex items-center justify-between gap-2 md:gap-4">
             <!-- 左侧：汉堡菜单 + 标题 -->
