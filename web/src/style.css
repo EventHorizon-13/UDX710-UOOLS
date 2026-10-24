@@ -12,9 +12,19 @@ html {
 }
 
 /* Match Safari chrome, overscroll and both safe areas to the current page theme. */
-html { --page-background:#f8fafc; background-color:var(--page-background); color-scheme:light; }
-html.dark { --page-background:#0f172a; color-scheme:dark; }
-body { background-color:var(--page-background); }
+html {
+  --page-background:#f8fafc;
+  background-color:var(--page-background);
+  background-image:linear-gradient(to bottom right,#f8fafc,rgba(239,246,255,.4),rgba(238,242,255,.3));
+  color-scheme:light;
+}
+html.dark {
+  --page-background:#0f172a;
+  background-color:var(--page-background);
+  background-image:linear-gradient(to bottom right,#0f172a,#1e293b,#0f172a);
+  color-scheme:dark;
+}
+body { background:transparent; }
 
 /* 安全区域适配（刘海屏、底部横条） */
 body {
@@ -32,9 +42,15 @@ main > header.safe-area-sticky {
 /* iOS Home Screen may report a zero inset with a translucent status bar. */
 html.standalone-app body {
   padding-top: max(env(safe-area-inset-top, 0px), 54px);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 34px);
 }
 html.standalone-app main > header.safe-area-sticky {
   top: max(env(safe-area-inset-top, 0px), 54px);
+}
+html.standalone-app #app aside.safe-area-sidebar {
+  top: max(env(safe-area-inset-top, 0px), 54px);
+  bottom: max(env(safe-area-inset-bottom, 0px), 34px);
+  height: auto;
 }
 
 /* 滚动穿透锁定：侧边栏/弹窗打开时使用 */

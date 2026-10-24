@@ -385,7 +385,7 @@ onUnmounted(() => {
 
 <template>
   <!-- 加载状态 -->
-  <div v-if="authChecking" class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/30 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex items-center justify-center">
+  <div v-if="authChecking" class="min-h-screen bg-transparent flex items-center justify-center">
     <div class="text-center">
       <div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center shadow-lg shadow-blue-500/30 animate-pulse">
         <font-awesome-icon icon="wifi" class="text-white text-2xl" />
@@ -395,7 +395,7 @@ onUnmounted(() => {
   </div>
 
   <!-- 主界面 -->
-  <div v-else class="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50/40 to-indigo-50/30 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 flex transition-all duration-500">
+  <div v-else class="min-h-screen bg-transparent flex transition-all duration-500">
     
     <!-- 登录弹窗遮罩 -->
     <Transition name="modal-backdrop">
@@ -533,7 +533,7 @@ onUnmounted(() => {
 
     <!-- 左侧侧边栏 -->
     <aside 
-      class="fixed left-0 top-0 h-full z-50 transition-all duration-300 ease-in-out"
+      class="fixed left-0 top-0 h-full safe-area-sidebar z-50 transition-all duration-300 ease-in-out"
       :class="[
         isMobile 
           ? (sidebarOpen ? 'w-64 translate-x-0' : 'w-64 -translate-x-full') 
