@@ -16,6 +16,17 @@ int main(int argc,char **argv) {
   assert(!private_network(0x0a000001U,0xfe000000U));
   assert(parse_config("192.168.1.254,255.255.255.0,192.168.1.2,192.168.1.253,0",&next));assert(valid_address_config(&next));
   strcpy(next.start,"192.168.1.1");assert(!valid_pool(&next));
+  /* The actual reported /24-within-cellular-/8 case is routable. Reject the
+   * reverse containment, endpoints, equal prefixes and non-cellular overlaps. */
+  assert(!interface_subnet_conflict("sipa_eth0",0x0a0000feU,0xffffff00U,0x0ac54ddfU,0xff000000U));
+  assert(interface_subnet_conflict("sipa_eth0",0x0a0000feU,0xff000000U,0x0ac54ddfU,0xff000000U));
+  assert(interface_subnet_conflict("sipa_eth0",0x0ac54dfeU,0xffffff00U,0x0ac54ddfU,0xff000000U));
+  assert(interface_subnet_conflict("eth9",0x0a0000feU,0xffffff00U,0x0ac54ddfU,0xff000000U));
+  assert(interface_subnet_conflict("sipa_eth0bad",0x0a0000feU,0xffffff00U,0x0ac54ddfU,0xff000000U));
+  assert(interface_subnet_conflict("sipa_eth0",0x0a0000feU,0xffffff00U,0x0a000001U,0xffffff00U));
+  assert(interface_subnet_conflict("sipa_eth0",0x0a0000feU,0xffffff00U,0x0a000001U,0xffff0000U));
+  assert(interface_subnet_conflict("sipa_eth0",0x0a0000feU,0xffffff00U,0x0ac54ddfU,0xff00ff00U));
+  assert(!interface_subnet_conflict("eth9",0xc0a80a01U,0xffffff00U,0x0ac54ddfU,0xff000000U));
   assert(safe_migration_dir(LAN_BACKUPS "/lan-address-AbC123"));
   assert(!safe_migration_dir(LAN_BACKUPS "/lan-address-../etc"));assert(!safe_migration_dir("/tmp/lan-address-AbC123"));
   assert(address_request(mg_str("{\"action\":\"address\",\"address\":\"10.0.0.52\",\"netmask\":\"255.255.255.0\",\"pool_start\":\"10.0.0.100\",\"pool_end\":\"10.0.0.254\",\"version\":\"v\",\"confirm\":true,\"validate_only\":true}"),0));

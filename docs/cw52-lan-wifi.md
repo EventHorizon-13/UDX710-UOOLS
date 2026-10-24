@@ -155,9 +155,12 @@ join two physical LANs. IPv6 and cellular default routes are not configured here
 `pool_start`, `pool_end`, a fresh `version` and `confirm:true`.
 `validate_only:true` validates without writes, locks, ARP probing or migration.
 Router/network/broadcast conflicts, the maintenance address inside the pool,
-overlapping prefixes on other local interfaces and noncanonical/extra/duplicate
-fields are rejected. For example, a cellular interface using 10.192.11.252/8
-overlaps 10.0.0.0/24. The real save also probes the currently reachable LAN
+conflicting prefixes on other local interfaces and noncanonical/extra/duplicate
+fields are rejected. A strictly narrower LAN such as 10.0.0.0/24 is permitted
+inside a cellular sipa_ethN /8 when it excludes that interface's actual address:
+the connected /24 route takes precedence. Equal/broader prefixes, a LAN containing
+the cellular endpoint, noncontiguous masks and overlaps with other non-cellular
+interfaces are rejected. The real save also probes the currently reachable LAN
 with ARP DAD.
 
 Recovery is prepared under userdata before applying. The old persistent file,
@@ -195,3 +198,36 @@ maintenance subnet, and only outbound cellular `sipa_eth+` interfaces. They are
 reconciled on apply/startup and restored on rollback without flushing vendor NAT
 chains or changing the cellular default route. A tagged 6677 allow rule also
 requires ingress on `tether`, so a matching cellular-side source cannot use it.
+
+## Live IPv4 application and DHCP reload boundary (2026-10-25)
+
+The CW52 vendor `TetheringDHCP` setter stores parameters and emits a property
+change; it does **not** apply a new IPv4 to an already running bridge or reload
+the embedded DHCP server. The previous staged implementation incorrectly assumed
+that readback of the property implied kernel address application. Prefix overlap
+alone did not establish the cause of its immediate rollback.
+
+Before changing an address or pool, turn off LAN DHCP. With its gate closed,
+address migration saves the vendor configuration, marks DHCP reload as required,
+uses `ip address replace <new CIDR> dev tether` to apply the requested address,
+and verifies the actual LAN route and management endpoints. It keeps the
+maintenance address and the existing bridge members. Confirmation removes a
+previous non-maintenance address only after the new destination socket and
+runtime state pass verification. Failures record a bounded stage name in the
+private transaction directory and return that stage to the user.
+
+The boot-scoped reload marker survives a backend process restart. DHCP cannot
+be enabled again during the same device boot after an address or pool change.
+A later device boot loads the saved native configuration; the saved disabled
+DHCP gate remains disabled until the user enables it. Both pool and address
+rollback restore the previous marker, including its absence. This prevents old
+DHCP offers from being silently presented as a newly applied pool.
+
+These operations do not restart ConnMan, toggle Tethering, rebuild the bridge,
+or invoke mm_app_service. Joining the main router's LAN also requires a physical
+layer-2 connection; a separate routed host interface is not automatically bridged
+by changing CW52's IPv4.
+
+Do not introspect the vendor ConnMan root object `/` on the tested firmware:
+a read-only Introspect request was followed by daemon exit. The documented
+Technology GetProperties/SetProperty path is used instead.

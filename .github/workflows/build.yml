@@ -37,6 +37,9 @@ jobs:
           sh -n /tmp/lan-address-rollback.sh
           python3 tests/lan_address_rollback_test.py
 
+      - name: Test LAN routing in an isolated kernel namespace (runner only)
+        run: sudo bash tests/lan_address_kernel_test.sh
+
       - name: Test CW52 configuration reload adapter (runner only)
         run: |
           sh -n cw52-hostapd-cli.sh

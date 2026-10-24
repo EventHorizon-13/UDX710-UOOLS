@@ -107,8 +107,10 @@
     dhcpOff: 'LAN DHCP 已关闭',
     dhcpUnavailable: 'DHCP 状态异常，请刷新或检查恢复记录。',
     dhcpOffNotice: '自动分配已关闭。新连接需使用其他 DHCP 服务或手动设置地址。',
+    disableDhcpFirst: '关闭 DHCP 后可修改本机 IPv4 和地址池。',
+    dhcpRestartRequired: 'LAN 配置已更改。如需重新开启 DHCP，请先重启 CW52。',
     netmask: '子网掩码', dns: '系统 DNS', poolStart: 'DHCP 起始地址', poolEnd: 'DHCP 结束地址',
-    addressWarning: '维护入口 {address} 保留。修改只改变 CW52 自身 LAN，不会自动桥接到主路由；保存后需从新地址登录确认，超时自动恢复。',
+    addressWarning: '维护入口 {address} 保留。保存后需从新地址登录确认，超时自动恢复。同网段接入需将 CW52 网口连接到主路由 LAN。',
     confirm: '保存 DHCP 地址池可能短暂影响客户端续租。更改 LAN 地址会断开连接，本次保留地址和掩码。确认应用？',
     saved: 'DHCP 地址池已保存并核验', saveError: 'LAN 保存失败', loadError: 'LAN 读取失败',
     unsupported: '未检测到 CW52 ConnMan DHCP 接口'

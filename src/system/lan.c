@@ -25,6 +25,12 @@
 #define LAN_FILE "/var/mm/dhcp_config.ini"
 #define LAN_BACKUPS "/mnt/data/local-udx710"
 #define LAN_RECOVERY_IP "192.168.1.1"
+#define DHCP_RELOAD_BOOT LAN_BACKUPS "/lan-dhcp-reload.boot"
+#define DHCP_RELOAD_RESTORE \
+  "if [ -f dhcp-reload.before ]; then\n" \
+  " cp -p dhcp-reload.before " DHCP_RELOAD_BOOT ".rollback && mv -f " DHCP_RELOAD_BOOT ".rollback " DHCP_RELOAD_BOOT " || exit 1\n" \
+  "elif [ -f dhcp-reload.absent ]; then\n" \
+  " rm -f " DHCP_RELOAD_BOOT " || exit 1\nelse exit 1\nfi\n"
 #define LAN_RECOVERY_HELPER "/home/root/6677/cw52-lan-recovery.sh"
 static int recovery_present(void);
 static int ensure_recovery(void);
@@ -123,6 +129,34 @@ static int atomic_file(const char *path, const char *data, size_t len, const str
   g_free(tmp); return ok;
 }
 
+/* This firmware stores TetheringDHCP parameters without reloading the running
+ * embedded DHCP server. Keep its gate closed until a subsequent device boot. */
+static int dhcp_reload_required(void) {
+  char *saved=NULL,*boot=NULL;gsize len=0;struct stat st;
+  if(lstat(DHCP_RELOAD_BOOT,&st))return errno==ENOENT?0:-1;
+  if(!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>64||
+     !g_file_get_contents(DHCP_RELOAD_BOOT,&saved,&len,NULL))return -1;
+  int ok=g_file_get_contents("/proc/sys/kernel/random/boot_id",&boot,NULL,NULL);
+  int result=ok?!strcmp(saved,boot):-1;g_free(saved);g_free(boot);return result;
+}
+static int backup_dhcp_reload(const char *dir) {
+  char *saved=NULL;gsize len=0;struct stat st;
+  int present=!lstat(DHCP_RELOAD_BOOT,&st);
+  if(!present && errno!=ENOENT)return 0;
+  if(present && (!S_ISREG(st.st_mode)||st.st_size<=0||st.st_size>64||
+      !g_file_get_contents(DHCP_RELOAD_BOOT,&saved,&len,NULL)))return 0;
+  char *path=g_build_filename(dir,present?"dhcp-reload.before":"dhcp-reload.absent",NULL);
+  struct stat private={.st_mode=0600,.st_uid=geteuid(),.st_gid=getegid()};
+  int ok=atomic_file(path,present?saved:"",present?len:0,&private);
+  g_free(saved);g_free(path);return ok;
+}
+static int mark_dhcp_reload(void) {
+  char *boot=NULL;gsize len=0;
+  if(!g_file_get_contents("/proc/sys/kernel/random/boot_id",&boot,&len,NULL))return 0;
+  struct stat private={.st_mode=0600,.st_uid=geteuid(),.st_gid=getegid()};
+  int ok=atomic_file(DHCP_RELOAD_BOOT,boot,len,&private);g_free(boot);return ok;
+}
+
 static int lan_address_present(const LanConfig *v) {
   struct ifaddrs *all;
   if (getifaddrs(&all)) return 0;
@@ -154,12 +188,12 @@ static int management_reachable(const LanConfig *v) {
 }
 
 /* Independent executable watchdog survives server exit. Recovery materials are
- * durable BEFORE any network write. No change touches routing or firewall. */
+ * durable BEFORE any network write. */
 static pid_t start_watchdog(const char *dir, const LanConfig *old) {
   char *value = config_string(old);
   char *script = g_strdup_printf(
     "#!/bin/sh\ncd '%s' || exit 1\n"
-    "restore() {\n dbus-send --system --print-reply --reply-timeout=4000 --dest=net.connman "
+    "restore() {\n" DHCP_RELOAD_RESTORE " dbus-send --system --print-reply --reply-timeout=4000 --dest=net.connman "
     LAN_TECH " net.connman.Technology.SetProperty string:TetheringDHCP variant:string:'%s' >dbus-rollback.log 2>&1\n"
     " cp -p dhcp_config.ini.before " LAN_FILE ".rollback.tmp && mv -f " LAN_FILE ".rollback.tmp " LAN_FILE "\n /bin/sh " LAN_RECOVERY_HELPER "\n sync\n}\n"
     "if [ \"$1\" = --now ]; then restore; exit $?; fi\n"
@@ -206,7 +240,7 @@ static int valid_request(struct mg_str body) {
 #define DHCP_CHAIN "CW52_LAN_DHCP"
 #define DHCP_JUMP "-A INPUT -i tether -p udp -m udp --dport 67 -j " DHCP_CHAIN
 #define DHCP_IPTABLES "/usr/sbin/iptables"
-typedef struct { int actual, desired, had_file; char version[65]; } DhcpState;
+typedef struct { int actual, desired, had_file, reload_required; char version[65]; } DhcpState;
 
 /* Refuse foreign/partial rules rather than overwriting an unrelated chain. */
 static int dhcp_parse_rules(const char *rules, int *enabled) {
@@ -236,8 +270,9 @@ static int dhcp_read(DhcpState *s) {
     else { g_free(text); return 0; }
     g_free(text);
   } else if (access(DHCP_STATE,F_OK)==0 || errno!=ENOENT) return 0;
-  char *boot=NULL; g_file_get_contents("/proc/sys/kernel/random/boot_id",&boot,NULL,NULL);
-  char *input=g_strdup_printf("v1:%d:%d:%d:%s",s->actual,s->desired,s->had_file,boot?boot:"");
+  s->reload_required=dhcp_reload_required();if(s->reload_required<0)return 0;
+  char *boot=NULL;g_file_get_contents("/proc/sys/kernel/random/boot_id",&boot,NULL,NULL);
+  char *input=g_strdup_printf("v2:%d:%d:%d:%d:%s",s->actual,s->desired,s->had_file,s->reload_required,boot?boot:"");
   char *hash=g_compute_checksum_for_string(G_CHECKSUM_SHA256,input,-1);
   g_strlcpy(s->version,hash,sizeof(s->version)); g_free(hash); g_free(input); g_free(boot);
   return 1;
@@ -315,6 +350,7 @@ static void dhcp_save(struct mg_connection *c, struct mg_http_message *hm) {
   if (!dhcp_read(&old) || !read_live(&lan)) { HTTP_ERROR(c,503,"DHCP state unavailable; no changes applied"); goto done; }
   if (!version || strcmp(version,old.version)) { HTTP_ERROR(c,409,"DHCP state changed; refresh before switching"); goto done; }
   if (old.actual!=old.desired) { HTTP_ERROR(c,409,"DHCP saved and runtime state differ; inspect recovery"); goto done; }
+  if (enabled && old.reload_required) { HTTP_ERROR(c,409,"restart CW52 before enabling DHCP after a LAN configuration change");goto done; }
   if (old.actual==enabled) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"unchanged\"}"); goto done; }
   if (!management_reachable(&lan)) { HTTP_ERROR(c,409,"management connection check failed; no changes applied"); goto done; }
   int lock=open("/run/udx710-lan.lock",O_WRONLY|O_CREAT|O_EXCL,0600);
@@ -390,25 +426,51 @@ static int valid_address_config(const LanConfig *v) {
   ipv4(v->start,&s);ipv4(v->end,&e);ipv4(LAN_RECOVERY_IP,&recovery);
   return a==recovery || recovery<s || recovery>e;
 }
+static int cellular_interface(const char *name) {
+  if(strncmp(name,"sipa_eth",8)||!name[8])return 0;
+  for(const char *p=name+8;*p;p++)if(!g_ascii_isdigit(*p))return 0;
+  return 1;
+}
+/* A strictly narrower LAN wins over the cellular connected route. Never allow
+ * the LAN to contain the cellular endpoint or overlap another LAN interface. */
+static int interface_subnet_conflict(const char *name,uint32_t a,uint32_t m,uint32_t other,uint32_t other_mask) {
+  uint32_t host=~other_mask;
+  if(!other_mask || (host&(host+1)))return 1;
+  uint32_t first=a&m,last=first|~m,other_first=other&other_mask,other_last=other_first|host;
+  if(first>other_last || other_first>last)return 0;
+  if(cellular_interface(name) && m>other_mask && (other&m)!=first &&
+     other_first<=first && last<=other_last)return 0;
+  return 1;
+}
 static int address_conflicts_locally(const LanConfig *v) {
   uint32_t a,m;ipv4(v->address,&a);ipv4(v->mask,&m);
-  uint32_t lan_first=a&m,lan_last=lan_first|~m;
   struct ifaddrs *all;if(getifaddrs(&all))return 1;int conflict=0;
-  for (struct ifaddrs *p=all;p;p=p->ifa_next) {
-    if (!p->ifa_addr || !p->ifa_netmask || p->ifa_addr->sa_family!=AF_INET ||
-        p->ifa_netmask->sa_family!=AF_INET || !strcmp(p->ifa_name,"tether") || !strcmp(p->ifa_name,"lo"))continue;
+  for(struct ifaddrs *p=all;p;p=p->ifa_next) {
+    if(!p->ifa_addr || !p->ifa_netmask || p->ifa_addr->sa_family!=AF_INET ||
+       p->ifa_netmask->sa_family!=AF_INET || !strcmp(p->ifa_name,"tether") || !strcmp(p->ifa_name,"lo"))continue;
     uint32_t n=ntohl(((struct sockaddr_in *)p->ifa_addr)->sin_addr.s_addr);
-    uint32_t other_mask=ntohl(((struct sockaddr_in *)p->ifa_netmask)->sin_addr.s_addr);
-    uint32_t other_host=~other_mask;
-    if (other_host&(other_host+1)) { conflict=1;continue; }
-    uint32_t other_first=n&other_mask,other_last=other_first|other_host;
-    if (lan_first<=other_last && other_first<=lan_last) conflict=1;
+    uint32_t mask=ntohl(((struct sockaddr_in *)p->ifa_netmask)->sin_addr.s_addr);
+    if(interface_subnet_conflict(p->ifa_name,a,m,n,mask))conflict=1;
   }
   freeifaddrs(all);return conflict;
 }
 static char *address_cidr(const LanConfig *v,int network) {
   uint32_t a,m;ipv4(v->address,&a);ipv4(v->mask,&m);struct in_addr n={.s_addr=htonl(network?(a&m):a)};
   char ip[16];inet_ntop(AF_INET,&n,ip,sizeof(ip));return g_strdup_printf("%s/%d",ip,mask_prefix(v->mask));
+}
+static int install_lan_address(const LanConfig *v) {
+  if(lan_address_present(v))return 1;
+  char *cidr=address_cidr(v,0),out[1024];
+  int ok=!run_command(out,sizeof(out),"/sbin/ip","-4","address","replace",cidr,"dev","tether",NULL);
+  g_free(cidr);return ok && lan_address_present(v);
+}
+static int lan_route_reaches_tether(const LanConfig *v) {
+  char out[2048];
+  if(run_command(out,sizeof(out),"/sbin/ip","-4","route","get",(char *)v->start,NULL) ||
+     strlen(out)>=sizeof(out)-1)return 0;
+  char **words=g_strsplit_set(out," \t\r\n",-1);int ok=0;
+  for(int i=0;words[i] && words[i+1];i++)if(!strcmp(words[i],"dev") && !strcmp(words[i+1],"tether"))ok=1;
+  g_strfreev(words);return ok;
 }
 static int recovery_present(void) {
   struct ifaddrs *all;if(getifaddrs(&all))return 0;int found=0;struct in_addr wanted;inet_pton(AF_INET,LAN_RECOVERY_IP,&wanted);
@@ -520,6 +582,7 @@ static char *migration_rollback_script(const char *dir,const LanConfig *old,cons
     " dbus-send --system --print-reply --reply-timeout=4000 --dest=net.connman " LAN_TECH
     " net.connman.Technology.SetProperty string:TetheringDHCP variant:string:'%s' >rollback.log 2>&1 && { ok=1; break; }\n"
     " sleep 1; n=$((n+1))\ndone\n"
+    DHCP_RELOAD_RESTORE
     "cp -p dhcp_config.ini.before " LAN_FILE ".rollback && mv -f " LAN_FILE ".rollback " LAN_FILE " || exit 1\n"
     "ip -4 address replace %s dev tether || exit 1\n%s"
     "/bin/sh " LAN_RECOVERY_HELPER " || exit 1\n"
@@ -551,8 +614,13 @@ static void address_confirm(struct mg_connection *c,struct mg_http_message *hm) 
   if(fd<0 || flock(fd,LOCK_EX|LOCK_NB)) { if(fd>=0)close(fd);HTTP_ERROR(c,409,"address recovery is in progress");goto done; }
   LanConfig actual;AddressMigration fresh;
   if(read_migration(&fresh)!=1 || strcmp(fresh.dir,m.dir) || !fresh.same_boot || monotonic_seconds()>=fresh.deadline ||
-      !read_live(&actual) || !same_config(&actual,&m.next) || !lan_address_present(&actual) || !recovery_present() || !management_reachable(&actual)) {
+      !read_live(&actual) || !same_config(&actual,&m.next) || !lan_address_present(&actual) || !recovery_present() || !management_reachable(&actual) || address_conflicts_locally(&actual) || !lan_route_reaches_tether(&actual)) {
     close(fd);HTTP_ERROR(c,409,"address verification failed or confirmation expired; recovery will restore the previous settings");goto done;
+  }
+  if(strcmp(m.old.address,LAN_RECOVERY_IP) && strcmp(m.old.address,m.next.address) && lan_address_present(&m.old)) {
+    char *cidr=address_cidr(&m.old,0),out[1024];
+    int ok=!run_command(out,sizeof(out),"/sbin/ip","-4","address","del",cidr,"dev","tether",NULL);g_free(cidr);
+    if(!ok) { close(fd);HTTP_ERROR(c,500,"could not remove the previous LAN address; recovery remains armed");goto done; }
   }
   if(!migration_file(m.dir,"committed","confirmed from new address\n",0600)) { close(fd);HTTP_ERROR(c,500,"could not persist confirmation; recovery remains armed");goto done; }
   unlink(LAN_PENDING);unlink("/run/udx710-lan.lock");sync_parent(LAN_PENDING);close(fd);
@@ -570,13 +638,14 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   next=old;if(!ipv4(address,NULL)||!ipv4(mask,NULL)||!ipv4(start,NULL)||!ipv4(end,NULL)) { HTTP_ERROR(c,400,"use canonical IPv4 addresses and a contiguous netmask");goto done; }
   g_strlcpy(next.address,address,16);g_strlcpy(next.mask,mask,16);g_strlcpy(next.start,start,16);g_strlcpy(next.end,end,16);
   if(!valid_address_config(&next)) { HTTP_ERROR(c,400,"use a private LAN /8 to /30 with a usable router and pool; exclude the maintenance address");goto done; }
-  if(address_conflicts_locally(&next)) { HTTP_ERROR(c,400,"new LAN subnet overlaps another local interface; choose a non-overlapping private subnet");goto done; }
+  if(address_conflicts_locally(&next)) { HTTP_ERROR(c,400,"new LAN conflicts with another local interface or contains a cellular address");goto done; }
   char *current=config_string(&old);int fresh=version&&!strcmp(version,current);g_free(current);
   if(!fresh) { HTTP_ERROR(c,409,"LAN state changed; refresh before saving");goto done; }
   if(!confirm) { HTTP_ERROR(c,400,"explicit confirmation required");goto done; }
   if(!lan_address_present(&old)) { HTTP_ERROR(c,409,"configured and running LAN addresses differ");goto done; }
   if(validate) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"valid; no changes applied\"}");goto done; }
   if(same_config(&old,&next)) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"unchanged\"}");goto done; }
+  if(dhcp_before.actual) { HTTP_ERROR(c,409,"turn off CW52 LAN DHCP before changing its IPv4 address");goto done; }
   if(!strcmp(old.address,next.address) && !strcmp(old.mask,next.mask)) { HTTP_ERROR(c,400,"use the DHCP pool save operation for pool-only changes");goto done; }
   if(access(LAN_RECOVERY_HELPER,R_OK)||access("/usr/bin/flock",X_OK)||!ensure_recovery()||!management_reachable(&old)) { HTTP_ERROR(c,409,"maintenance recovery path unavailable; no changes applied");goto done; }
   if(strcmp(old.address,next.address) && strcmp(next.address,LAN_RECOVERY_IP)) {
@@ -584,7 +653,7 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   }
   int lock=open("/run/udx710-lan.lock",O_WRONLY|O_CREAT|O_EXCL,0600);
   if(lock<0) { HTTP_ERROR(c,409,"another LAN change is pending; inspect recovery");goto done; }
-  char *dir=NULL,*original=NULL,*patched=NULL,*script=NULL,*path=NULL;gsize len=0,plen=0;int prepared=0,pending=0;
+  char *dir=NULL,*original=NULL,*patched=NULL,*script=NULL,*path=NULL;gsize len=0,plen=0;int prepared=0,pending=0;const char *stage="recovery preparation";
   struct stat st,mnt,parent;GKeyFile *kf=g_key_file_new();pid_t pid=-1;
   if(stat("/mnt/data",&mnt)||stat("/mnt",&parent)||mnt.st_dev==parent.st_dev ||
     lstat(LAN_FILE,&st)||!S_ISREG(st.st_mode)||st.st_size>65536||!g_file_get_contents(LAN_FILE,&original,&len,NULL)||
@@ -595,6 +664,7 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   dir=g_strdup(LAN_BACKUPS "/lan-address-XXXXXX");if(!mkdtemp(dir))goto failed;
   if(write(lock,dir,strlen(dir))!=(ssize_t)strlen(dir)||fsync(lock))goto failed;
   path=g_build_filename(dir,"dhcp_config.ini.before",NULL);int backed=atomic_file(path,original,len,&st);g_free(path);path=NULL;if(!backed)goto failed;
+  if(!backup_dhcp_reload(dir))goto failed;
   char *v=config_string(&old);int ok=migration_file(dir,"before",v,0600);g_free(v);if(!ok)goto failed;
   v=config_string(&next);ok=migration_file(dir,"after",v,0600);g_free(v);if(!ok)goto failed;
   char *boot=NULL;if(!g_file_get_contents("/proc/sys/kernel/random/boot_id",&boot,NULL,NULL))goto failed;ok=migration_file(dir,"boot-id",boot,0600);g_free(boot);if(!ok)goto failed;
@@ -604,16 +674,25 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   if(!pid) { setsid();int null=open("/dev/null",O_RDWR);if(null>=0) {dup2(null,0);dup2(null,1);dup2(null,2);if(null>2)close(null);}close(lock);execl("/bin/sh","sh",path,(char *)NULL);_exit(127); }
   prepared=1;g_free(path);path=NULL;struct stat private={.st_mode=0600,.st_uid=geteuid(),.st_gid=getegid()};
   if(!atomic_file(LAN_PENDING,dir,strlen(dir),&private))goto failed;pending=1;
-  patched=g_key_file_to_data(kf,&plen,NULL);if(!patched||!atomic_file(LAN_FILE,patched,plen,&st)||!web_subnet_rule(&next,1))goto failed;
-  if(!apply_live(&next)||!ensure_recovery()||!web_subnet_rule(&next,1)||!nat_subnet_rule(&next,1)||!nat_recovery_rule(&next)||!dhcp_rules_apply(dhcp_before.desired)||!read_live(&actual)||!same_config(&actual,&next)||!lan_address_present(&next)||!management_reachable(&next))goto failed;
+  stage="persistent configuration";patched=g_key_file_to_data(kf,&plen,NULL);
+  if(!patched||!atomic_file(LAN_FILE,patched,plen,&st)||!mark_dhcp_reload())goto failed;
+  stage="ConnMan parameter save";if(!apply_live(&next))goto failed;
+  stage="LAN address application";if(!install_lan_address(&next)||!ensure_recovery())goto failed;
+  stage="LAN access and cellular NAT";
+  if(!web_subnet_rule(&next,1)||!nat_subnet_rule(&next,1)||!nat_recovery_rule(&next)||!dhcp_rules_apply(0))goto failed;
+  stage="configuration readback";if(!read_live(&actual)||!same_config(&actual,&next))goto failed;
+  stage="LAN route verification";if(!lan_route_reaches_tether(&next))goto failed;
+  stage="maintenance verification";if(!management_reachable(&next))goto failed;
   char *oldnet=address_cidr(&old,1),*newnet=address_cidr(&next,1);int same_net=!strcmp(oldnet,newnet);g_free(oldnet);g_free(newnet);
-  if(!same_net && (!web_subnet_rule(&old,0)||!nat_subnet_rule(&old,0)))goto failed;
+  stage="previous subnet policy cleanup";if(!same_net && (!web_subnet_rule(&old,0)||!nat_subnet_rule(&old,0)))goto failed;
   /* The independent watchdog keeps the lock until confirmation from new IP. */
   HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"Open the new IPv4 address and confirm within two minutes\"}");goto cleanup;
 failed:
   if(pending) {
+    migration_file(dir,"error-stage",stage,0600);
     int restored=migration_rollback(dir)&&read_live(&actual)&&same_config(&actual,&old)&&management_reachable(&old);
-    HTTP_ERROR(c,500,restored?"address change failed; previous settings restored":"address change failed; recovery remains armed; inspect rollback.sh");
+    char *message=g_strdup_printf("address change failed at %s; %s",stage,restored?"previous settings restored":"recovery remains armed; inspect rollback.sh");
+    HTTP_ERROR(c,500,message);g_free(message);
   } else {unlink("/run/udx710-lan.lock");HTTP_ERROR(c,500,"address recovery preparation failed; no address change applied");}
 cleanup:
   close(lock);g_key_file_free(kf);g_free(dir);g_free(original);g_free(patched);g_free(script);g_free(path);(void)prepared;
@@ -636,6 +715,7 @@ static void lan_status(struct mg_connection *c) {
   if (dhcp_ok) {
     json_add_bool(j,"enabled",dhcp.actual);json_add_bool(j,"saved_enabled",dhcp.desired);
     json_add_bool(j,"consistent",dhcp.actual==dhcp.desired);json_add_str(j,"version",dhcp.version);
+    json_add_bool(j,"restart_required",dhcp.reload_required);
   }
   json_obj_close(j);
   if (supported) {
@@ -645,8 +725,8 @@ static void lan_status(struct mg_connection *c) {
     char *version = config_string(&v); json_add_str(j,"version",version); g_free(version);
     AddressMigration migration;int migration_state=read_migration(&migration);
     int writable=lan_address_present(&v) && migration_state==0 && access("/run/udx710-lan.lock",F_OK)!=0;
-    json_add_bool(j,"pool_writable",writable);
-    json_add_bool(j,"address_writable",writable && !access(LAN_RECOVERY_HELPER,R_OK) && !access("/usr/bin/flock",X_OK) && !access("/bin/arping",X_OK));
+    json_add_bool(j,"pool_writable",writable && dhcp_ok && !dhcp.actual);
+    json_add_bool(j,"address_writable",writable && dhcp_ok && !dhcp.actual && !access(LAN_RECOVERY_HELPER,R_OK) && !access("/usr/bin/flock",X_OK) && !access("/bin/arping",X_OK));
     json_add_str(j,"recovery_address",LAN_RECOVERY_IP);
     json_add_bool(j,"migration_error",migration_state<0);
     if(migration_state==1) {
@@ -675,7 +755,7 @@ static void lan_status(struct mg_connection *c) {
 
 static void lan_save(struct mg_connection *c, struct mg_http_message *hm) {
   if (!valid_request(hm->body)) { HTTP_ERROR(c,400,"invalid or unsupported LAN fields"); return; }
-  LanConfig old, next, actual;
+  LanConfig old, next, actual;DhcpState dhcp_before;
   char *start = mg_json_get_str(hm->body,"$.pool_start"), *end = mg_json_get_str(hm->body,"$.pool_end");
   char *version = mg_json_get_str(hm->body,"$.version");
   bool confirm = false, validate = false;
@@ -692,6 +772,8 @@ static void lan_save(struct mg_connection *c, struct mg_http_message *hm) {
   if (!lan_address_present(&old)) { HTTP_ERROR(c,409,"LAN configuration differs from management interface"); goto done; }
   if (validate) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"valid; no changes applied\"}"); goto done; }
   if (same_config(&old,&next)) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"unchanged\"}"); goto done; }
+  if(!dhcp_read(&dhcp_before)||dhcp_before.actual!=dhcp_before.desired) { HTTP_ERROR(c,409,"DHCP state unavailable or inconsistent");goto done; }
+  if(dhcp_before.actual) { HTTP_ERROR(c,409,"turn off CW52 LAN DHCP before changing its address pool");goto done; }
 
   int lock = open("/run/udx710-lan.lock",O_WRONLY|O_CREAT|O_EXCL,0600);
   if (lock < 0) { HTTP_ERROR(c,409,"LAN save locked; inspect recovery before retrying"); goto done; }
@@ -717,9 +799,10 @@ static void lan_save(struct mg_connection *c, struct mg_http_message *hm) {
   int backed = atomic_file(backup,original,len,&st); g_free(backup); if (!backed) goto failed;
   g_key_file_set_string(kf,"global","start_ip",next.start); g_key_file_set_string(kf,"global","end_ip",next.end);
   patched = g_key_file_to_data(kf,&plen,NULL); if (!patched) goto failed;
+  if(!backup_dhcp_reload(dir))goto failed;
   watcher = start_watchdog(dir,&old); if (watcher < 0) goto failed;
   prepared = 1;
-  if (!atomic_file(LAN_FILE,patched,plen,&st)) goto failed;
+  if (!atomic_file(LAN_FILE,patched,plen,&st) || !mark_dhcp_reload()) goto failed;
   if (!apply_live(&next) || !ensure_recovery() || !read_live(&actual) || !same_config(&actual,&next) || !management_reachable(&old)) goto failed;
   char *commit = g_build_filename(dir,"committed",NULL);
   struct stat private = {.st_mode=0600,.st_uid=geteuid(),.st_gid=getegid()};
@@ -731,7 +814,9 @@ static void lan_save(struct mg_connection *c, struct mg_http_message *hm) {
   goto cleanup;
 failed:
   if (prepared) {
-    int restored = apply_live(&old) && ensure_recovery() && read_live(&actual) && same_config(&actual,&old);
+    char *rollback=g_build_filename(dir,"rollback.sh",NULL),output[1024];
+    int restored=!run_command(output,sizeof(output),"/bin/sh",rollback,"--now",NULL) &&
+      read_live(&actual) && same_config(&actual,&old) && management_reachable(&old);g_free(rollback);
     if (!atomic_file(LAN_FILE,original,len,&st)) restored = 0;
     HTTP_ERROR(c,500,restored ? "apply failed; previous configuration restored" : "apply failed; recovery watchdog will retry; use saved rollback.sh");
   } else HTTP_ERROR(c,500,"recovery preparation failed; LAN was not changed");

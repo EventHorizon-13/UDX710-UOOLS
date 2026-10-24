@@ -107,6 +107,8 @@ export default {
     dhcpOff: 'LAN DHCP disabled',
     dhcpUnavailable: 'DHCP state unavailable or inconsistent. Refresh or inspect recovery records.',
     dhcpOffNotice: 'Automatic addressing is off. New connections need another DHCP server or manual addresses.',
+    disableDhcpFirst: 'Turn off DHCP to edit the local IPv4 address and pool.',
+    dhcpRestartRequired: 'LAN configuration changed. Restart CW52 before enabling DHCP again.',
     netmask: 'Netmask', dns: 'System DNS', poolStart: 'DHCP pool start', poolEnd: 'DHCP pool end',
     addressWarning: 'Maintenance address {address} remains available. Confirm changes from the new address, or they will be restored.',
     confirm: 'Apply the DHCP pool? Client renewal may be briefly affected. Changing the LAN address disconnects clients; this save preserves the address and netmask.',

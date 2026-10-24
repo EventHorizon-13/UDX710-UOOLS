@@ -125,12 +125,14 @@ onUnmounted(() => clearInterval(migrationPoll))
         <button type="button" class="dhcp-switch" role="switch" :aria-label="t('lan.dhcp')"
           :aria-checked="state.dhcp?.supported ? state.dhcp.enabled : false"
           :class="{ on: state.dhcp?.supported && state.dhcp.enabled }"
-          :disabled="busy || !!state.migration || state.migration_error || !state.dhcp?.supported || !state.dhcp.consistent" @click="toggleDhcp">
+          :disabled="busy || !!state.migration || state.migration_error || !state.dhcp?.supported || !state.dhcp.consistent || (!state.dhcp.enabled && state.dhcp.restart_required)" @click="toggleDhcp">
           <span></span>
         </button>
       </div>
       <p v-if="!state.dhcp?.supported || !state.dhcp.consistent" class="dhcp-warning" role="status">{{ t('lan.dhcpUnavailable') }}</p>
       <p v-else-if="!state.dhcp.enabled" class="notice dhcp-off" role="status">{{ t('lan.dhcpOffNotice') }}</p>
+      <p v-if="state.dhcp?.enabled" class="notice dhcp-off" role="status">{{ t('lan.disableDhcpFirst') }}</p>
+      <p v-if="state.dhcp?.restart_required" class="dhcp-warning" role="status">{{ t('lan.dhcpRestartRequired') }}</p>
       <div v-if="state.migration" class="migration" role="status">
         <strong>{{ t('lan.pendingTitle') }}</strong>
         <p>{{ t('lan.pendingCountdown', { seconds: state.migration.seconds_left }) }}</p>
