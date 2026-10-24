@@ -90,6 +90,15 @@ export default {
   },
 
   lan: {
+    localAddress: 'Device IPv4',
+    confirmAddress: 'Change the LAN IPv4 address and pool? Log in at the new address and confirm within 2 minutes, or the previous settings will be restored. The fixed maintenance address remains available.',
+    addressPending: 'Address applied temporarily. Log in at the new address to confirm.',
+    addressConfirmed: 'New LAN address confirmed and saved',
+    pendingTitle: 'Confirm the new LAN address',
+    pendingCountdown: 'Log in at the new address and confirm within {seconds} seconds, or the previous settings will be restored.',
+    keepAddress: 'Keep new address',
+    openNewAddress: 'Open new address',
+    migrationError: 'Address recovery records are invalid. Inspect recovery before editing.',
     dhcp: 'Automatic DHCP addressing',
     dhcpScope: 'Ethernet, WiFi and USB',
     confirmDhcpOn: 'Enable DHCP addressing for the entire LAN?',
@@ -99,7 +108,7 @@ export default {
     dhcpUnavailable: 'DHCP state unavailable or inconsistent. Refresh or inspect recovery records.',
     dhcpOffNotice: 'Automatic addressing is off. New connections need another DHCP server or manual addresses.',
     netmask: 'Netmask', dns: 'System DNS', poolStart: 'DHCP pool start', poolEnd: 'DHCP pool end',
-    addressWarning: 'Changing the LAN address disconnects management clients. This device has a fixed management path; address and netmask are read-only.',
+    addressWarning: 'Maintenance address {address} remains available. Confirm changes from the new address, or they will be restored.',
     confirm: 'Apply the DHCP pool? Client renewal may be briefly affected. Changing the LAN address disconnects clients; this save preserves the address and netmask.',
     saved: 'DHCP pool saved and verified', saveError: 'LAN save failed', loadError: 'LAN read failed',
     unsupported: 'CW52 ConnMan DHCP interface not detected'

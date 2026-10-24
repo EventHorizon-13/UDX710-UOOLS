@@ -90,6 +90,15 @@
   },
 
   lan: {
+    localAddress: '本机 IPv4',
+    confirmAddress: '更改 LAN IPv4 和地址池？保存后须在新地址登录并确认，2 分钟内未确认会自动恢复。固定维护入口将保留。',
+    addressPending: '地址已暂时应用，请到新地址登录确认',
+    addressConfirmed: '新地址已确认保存',
+    pendingTitle: '确认新的 LAN 地址',
+    pendingCountdown: '请从新地址登录后确认；{seconds} 秒内未确认将自动恢复原设置。',
+    keepAddress: '确认保留新地址',
+    openNewAddress: '打开新地址',
+    migrationError: '地址恢复记录异常，请检查后再修改。',
     dhcp: 'DHCP 自动分配地址',
     dhcpScope: '适用于有线、WiFi 和 USB',
     confirmDhcpOn: '开启整个 LAN 的 DHCP 自动分配地址？',
@@ -99,7 +108,7 @@
     dhcpUnavailable: 'DHCP 状态异常，请刷新或检查恢复记录。',
     dhcpOffNotice: '自动分配已关闭。新连接需使用其他 DHCP 服务或手动设置地址。',
     netmask: '子网掩码', dns: '系统 DNS', poolStart: 'DHCP 起始地址', poolEnd: 'DHCP 结束地址',
-    addressWarning: '更改 LAN 地址会断开管理连接；当前管理通道固定，地址和掩码仅供查看。',
+    addressWarning: '维护入口 {address} 保留。修改地址后需从新地址登录确认；未确认自动恢复。',
     confirm: '保存 DHCP 地址池可能短暂影响客户端续租。更改 LAN 地址会断开连接，本次保留地址和掩码。确认应用？',
     saved: 'DHCP 地址池已保存并核验', saveError: 'LAN 保存失败', loadError: 'LAN 读取失败',
     unsupported: '未检测到 CW52 ConnMan DHCP 接口'

@@ -36,6 +36,7 @@ int main(int argc, char *argv[]) {
   printf("启动数据连接监听...\n");
   ofono_start_data_monitor();
 
+  lan_address_init();
   lan_dhcp_init();
 
   /* 启动 HTTP 服务器 */

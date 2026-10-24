@@ -16,10 +16,8 @@ actual LAN address/prefix, netmask and system DNS resolvers as read-only values.
 
 Deliberately omitted write controls:
 
-* LAN address/netmask: existing ttyd binds `192.168.1.1` and 6677's access chain
-  allows `192.168.1.0/24`. A subnet migration would also require changes to those
-  independently maintained entry points and the NAS management route. This API
-  rejects address/mask fields and preserves both in every write.
+* LAN address/netmask now use the separate staged migration API below; a
+  fixed maintenance alias preserves the existing management route.
 * The vendor `Tethering` switch also controls USB/LAN transport and is never used
   as a DHCP switch. The independent LAN DHCP gate is described below.
 * Lease time: the only vendor field is `ttl=0`; its meaning/unit and treatment of
@@ -143,3 +141,49 @@ userdata directory and restored during backend startup. Absence defaults to
 DHCP enabled without firewall writes. Restoring a saved disabled setting on
 backend startup is supported; whole-device reboot still requires hardware
 verification. Saved/runtime disagreement is explicitly shown and blocks changes.
+
+## Staged LAN IPv4 editing
+
+The LAN form edits the private IPv4 address, contiguous mask (/8 through /30)
+and DHCP pool together. Pool-only writes retain their existing API. The fixed
+maintenance address `192.168.1.1` is retained as a secondary address on `tether`
+when needed. Existing SSH, ttyd and the NAS/HTTPS route keep that maintenance
+address. This is not a bridge to the main router: equal prefixes alone do not
+join two physical LANs. IPv6 and cellular default routes are not configured here.
+
+`POST /api/lan` with `action:"address"` requires `address`, `netmask`,
+`pool_start`, `pool_end`, a fresh `version` and `confirm:true`.
+`validate_only:true` validates without writes, locks, ARP probing or migration.
+Router/network/broadcast conflicts, the maintenance address inside the pool,
+other local interface networks and noncanonical/extra/duplicate fields are
+rejected. The real save also probes the currently reachable LAN with ARP DAD.
+
+Recovery is prepared under userdata before applying. The old persistent file,
+configurations, boot ID, deadline and independent executable rollback are saved
+in `lan-address-*`. The shared LAN lock blocks overlapping mutations. The
+pending pointer survives backend exit. A 120-second watchdog and confirmations
+share an advisory file lock to resolve timeout races. An unconfirmed change is
+rolled back; an unconfirmed transaction found after a new device boot is also
+rolled back by backend initialization. Incomplete recovery retains the pointer
+and lock for inspection instead of claiming success.
+
+After applying, open `http://<new IPv4>:6677/`, log in and choose **Keep new
+address**. `action:"confirm_address"` requires the pending `id` and confirmation.
+The accepted TCP socket must actually terminate at the new IPv4, independently
+of Host/forwarding headers, and runtime configuration and maintenance endpoints
+must still agree. Confirming through the old reverse-proxy target is rejected.
+The UI displays a countdown and polls only while a migration is pending.
+
+Install the packaged executable `cw52-lan-recovery.sh` with server/dist. The
+managed CW52 boot entry invokes it after the original USB initialization; it
+waits for ConnMan's configured LAN and adds only the missing maintenance alias.
+It never flushes or replaces addresses. Backend initialization and pool saves
+also preserve the alias and reconcile only the tagged new-subnet 6677 rule.
+Rollback removes only its tagged rule and restores the previous subnet rule;
+LAN DHCP's saved gate is preserved. Never use Tethering as an address switch.
+
+Tests exercise private/mask/pool schemas, destination-socket confirmation,
+maintenance-only alias restoration, and generated rollback with fake network
+tools plus real filesystem locks (including failed setter and confirm/timeout
+races). Production installation and validation do not imply a real address
+migration or a device reboot has been performed.
