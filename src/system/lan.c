@@ -392,11 +392,17 @@ static int valid_address_config(const LanConfig *v) {
 }
 static int address_conflicts_locally(const LanConfig *v) {
   uint32_t a,m;ipv4(v->address,&a);ipv4(v->mask,&m);
+  uint32_t lan_first=a&m,lan_last=lan_first|~m;
   struct ifaddrs *all;if(getifaddrs(&all))return 1;int conflict=0;
   for (struct ifaddrs *p=all;p;p=p->ifa_next) {
-    if (!p->ifa_addr || p->ifa_addr->sa_family!=AF_INET || !strcmp(p->ifa_name,"tether") || !strcmp(p->ifa_name,"lo"))continue;
+    if (!p->ifa_addr || !p->ifa_netmask || p->ifa_addr->sa_family!=AF_INET ||
+        p->ifa_netmask->sa_family!=AF_INET || !strcmp(p->ifa_name,"tether") || !strcmp(p->ifa_name,"lo"))continue;
     uint32_t n=ntohl(((struct sockaddr_in *)p->ifa_addr)->sin_addr.s_addr);
-    if ((n&m)==(a&m)) conflict=1;
+    uint32_t other_mask=ntohl(((struct sockaddr_in *)p->ifa_netmask)->sin_addr.s_addr);
+    uint32_t other_host=~other_mask;
+    if (other_host&(other_host+1)) { conflict=1;continue; }
+    uint32_t other_first=n&other_mask,other_last=other_first|other_host;
+    if (lan_first<=other_last && other_first<=lan_last) conflict=1;
   }
   freeifaddrs(all);return conflict;
 }
@@ -563,7 +569,8 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   if(!read_live(&old)) { HTTP_ERROR(c,503,"ConnMan LAN configuration unavailable");goto done; }
   next=old;if(!ipv4(address,NULL)||!ipv4(mask,NULL)||!ipv4(start,NULL)||!ipv4(end,NULL)) { HTTP_ERROR(c,400,"use canonical IPv4 addresses and a contiguous netmask");goto done; }
   g_strlcpy(next.address,address,16);g_strlcpy(next.mask,mask,16);g_strlcpy(next.start,start,16);g_strlcpy(next.end,end,16);
-  if(!valid_address_config(&next) || address_conflicts_locally(&next)) { HTTP_ERROR(c,400,"use a private LAN /8 to /30 with a usable router and pool; exclude the maintenance address and other local interfaces");goto done; }
+  if(!valid_address_config(&next)) { HTTP_ERROR(c,400,"use a private LAN /8 to /30 with a usable router and pool; exclude the maintenance address");goto done; }
+  if(address_conflicts_locally(&next)) { HTTP_ERROR(c,400,"new LAN subnet overlaps another local interface; choose a non-overlapping private subnet");goto done; }
   char *current=config_string(&old);int fresh=version&&!strcmp(version,current);g_free(current);
   if(!fresh) { HTTP_ERROR(c,409,"LAN state changed; refresh before saving");goto done; }
   if(!confirm) { HTTP_ERROR(c,400,"explicit confirmation required");goto done; }
