@@ -418,9 +418,9 @@ static int ensure_recovery(void) {
 static int web_subnet_rule(const LanConfig *v,int add) {
   char *cidr=address_cidr(v,1),out[2048];int ok=1;
   if(strcmp(cidr,LAN_RECOVERY_NET)) {
-    int exists=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-C","CW52_UDX_WEB","-s",cidr,"-m","comment","--comment",LAN_ADDRESS_TAG,"-j","RETURN",NULL);
-    if(add && !exists)ok=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-I","CW52_UDX_WEB","1","-s",cidr,"-m","comment","--comment",LAN_ADDRESS_TAG,"-j","RETURN",NULL);
-    if(!add && exists)ok=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-D","CW52_UDX_WEB","-s",cidr,"-m","comment","--comment",LAN_ADDRESS_TAG,"-j","RETURN",NULL);
+    int exists=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-C","CW52_UDX_WEB","-i","tether","-s",cidr,"-m","comment","--comment",LAN_ADDRESS_TAG,"-j","RETURN",NULL);
+    if(add && !exists)ok=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-I","CW52_UDX_WEB","1","-i","tether","-s",cidr,"-m","comment","--comment",LAN_ADDRESS_TAG,"-j","RETURN",NULL);
+    if(!add && exists)ok=!run_command(out,sizeof(out),DHCP_IPTABLES,"-w","2","-D","CW52_UDX_WEB","-i","tether","-s",cidr,"-m","comment","--comment",LAN_ADDRESS_TAG,"-j","RETURN",NULL);
   }
   g_free(cidr);return ok;
 }
@@ -477,10 +477,10 @@ static char *migration_rollback_script(const char *dir,const LanConfig *old,cons
   char *value=config_string(old),*oldcidr=address_cidr(old,0),*newcidr=address_cidr(next,0);
   char *oldnet=address_cidr(old,1),*newnet=address_cidr(next,1);
   char *remove_new=strcmp(newnet,LAN_RECOVERY_NET)?g_strdup_printf(
-    "iptables -w 2 -D CW52_UDX_WEB -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN 2>/dev/null || :\n",newnet):g_strdup("");
+    "iptables -w 2 -D CW52_UDX_WEB -i tether -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN 2>/dev/null || :\n",newnet):g_strdup("");
   char *restore_old=strcmp(oldnet,LAN_RECOVERY_NET)?g_strdup_printf(
-    "iptables -w 2 -C CW52_UDX_WEB -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN 2>/dev/null || "
-    "iptables -w 2 -I CW52_UDX_WEB 1 -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN || exit 1\n",oldnet,oldnet):g_strdup("");
+    "iptables -w 2 -C CW52_UDX_WEB -i tether -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN 2>/dev/null || "
+    "iptables -w 2 -I CW52_UDX_WEB 1 -i tether -s %s -m comment --comment " LAN_ADDRESS_TAG " -j RETURN || exit 1\n",oldnet,oldnet):g_strdup("");
   char *remove_addr=strcmp(oldcidr,newcidr)?g_strdup_printf("ip -4 address del %s dev tether 2>/dev/null || :\n",newcidr):g_strdup("");
   char *s=g_strdup_printf(
     "#!/bin/sh\nD='%s'\ncd \"$D\" || exit 1\n"
