@@ -83,3 +83,27 @@ IPv4/IPv6 records, lease matching, long hostnames and 601 station records.
 Deployment verification uses GETs, anonymous-write rejection, malformed payloads
 and `validate_only`. Real LAN/DHCP/WiFi writes and reboot are deliberately not
 performed during this maintenance run.
+
+## CW52 configuration reload fix (2026-10-24)
+
+The vendor CLI does not support `reconfigure`. Its `reload` command returns OK
+but reuses the in-memory configuration instead of reading the changed file.
+The packaged `cw52-hostapd-cli.sh` adapter sends SIGHUP to the unique hostapd
+process whose executable matches the requested radio. SIGHUP reads the file;
+status/client/disable requests still use the vendor CLI. Enabling a radio first
+loads any configuration saved while it was disabled. Missing/ambiguous processes,
+wrong executables and signal failures fail closed. No service is restarted.
+
+Deploy `6677/cw52-hostapd-cli.sh` alongside `6677/server` at
+`/home/root/6677/cw52-hostapd-cli.sh`, with executable permissions. The Actions
+artifact includes both files. Manual backend-only upgrades must install the
+adapter too. The device's earlier local repair uses the equivalent adapter at
+`/mnt/data/6677-wifi`; this source build uses the bundled path.
+
+A real 2.4 GHz SSID change and restoration via the authenticated API were verified
+against the running hostapd state. New-password association, 5 GHz changes,
+DFS switching, save-while-disabled and reboot were not verified on hardware.
+The Python adapter tests mock process discovery, executable lookup, signals,
+waits and the vendor CLI; they do not touch a running access point.
+WiFi settings call hostapd directly; LAN DHCP calls ConnMan directly. Neither
+setter calls mm_app_service, but stopping that service was not tested.

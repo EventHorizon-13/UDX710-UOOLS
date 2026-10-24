@@ -16,7 +16,7 @@
 #include "wifi.h"
 #include "wifi_clients.h"
 
-#define HOSTAPD_CLI "/usr/sbin/hostapd_cli"
+#define HOSTAPD_CLI "/home/root/6677/cw52-hostapd-cli.sh"
 #define HOSTAPD_CTRL "/var/run/hostapd"
 #define CONF_2G "/var/mm/hostapd_2.4g.conf"
 #define CONF_5G "/var/mm/hostapd_5g.conf"
@@ -286,7 +286,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
 
   if (was_enabled) {
     memset(output, 0, sizeof(output));
-    int applied = !run_hostapd(iface,"reconfigure",output,sizeof(output)) && strstr(output,"OK");
+    int applied = !run_hostapd(iface,"reload",output,sizeof(output)) && strstr(output,"OK");
     int verified = 0;
     for (int attempt=0;applied && attempt<5;attempt++) {
       WifiBand actual = {0}; memset(output,0,sizeof(output));
@@ -300,7 +300,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
     }
     if (!verified) {
       int restored = !restore_config(conf, st.st_mode & 0777, st.st_uid, st.st_gid);
-      if (restored) { memset(output, 0, sizeof(output)); run_hostapd(iface, "reconfigure", output, sizeof(output)); }
+      if (restored) { memset(output, 0, sizeof(output)); run_hostapd(iface, "reload", output, sizeof(output)); }
       HTTP_ERROR(c, 500, restored ? "hostapd rejected config; previous file restored" : "hostapd rejected config; restore failed");
       goto done;
     }

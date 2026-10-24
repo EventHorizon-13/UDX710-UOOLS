@@ -31,6 +31,11 @@ jobs:
             "/tmp/${test}_test"
           done
 
+      - name: Test CW52 configuration reload adapter (runner only)
+        run: |
+          sh -n cw52-hostapd-cli.sh
+          python3 tests/wifi_reload_test.py
+
       - name: Cache cross compiler (aarch64)
         uses: actions/cache@v4
         with:
@@ -77,6 +82,7 @@ jobs:
           mv start.sh output/6677/
           cp -r web/dist output/6677/
           cp src/build/ofono-server output/6677/server
+          install -m 755 cw52-hostapd-cli.sh output/6677/cw52-hostapd-cli.sh
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
