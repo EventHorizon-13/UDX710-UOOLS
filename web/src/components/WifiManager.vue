@@ -113,13 +113,12 @@ onMounted(loadStatus)
     <div v-else class="bands">
       <article v-for="band in bands" :key="band.interface" class="wifi-card">
         <header class="band-header">
-          <div class="band-name"><h3>{{ band.band }}</h3><p>{{ band.ssid || '—' }}</p></div>
+          <div class="band-name"><div class="band-title"><h3>{{ band.band }}</h3><span class="band-channel">{{ t('wifi.channel') }} {{ band.channel || '—' }}</span></div><p>{{ band.ssid || '—' }}<span v-if="band.hidden" class="hidden-state"> · {{ t('wifi.hidden') }}</span></p></div>
           <div class="actions">
             <button @click="editConfig(band)" :disabled="busyBand === band.interface">{{ t('wifi.editConfig') }}</button>
             <button type="button" role="switch" class="radio-switch" @click="setRadio(band)" :disabled="loading || !!busyBand" :aria-label="band.band + ' Wi-Fi'" :aria-checked="band.enabled" :aria-busy="busyBand === band.interface"><span class="switch-thumb" /></button>
           </div>
         </header>
-        <p class="band-state">{{ t('wifi.channel') }} {{ band.channel || '—' }}<span v-if="band.hidden"> · {{ t('wifi.hidden') }}</span></p>
         <form v-if="configOpen[band.interface]" class="config-form" @submit.prevent="saveConfig(band)">
           <label>{{ t('wifi.ssid') }}<input v-model="configDraft[band.interface].ssid" required maxlength="32" autocomplete="off" /></label>
           <label>{{ t('wifi.newPassword') }}<input v-model="configDraft[band.interface].password" type="password" minlength="8" maxlength="63" autocomplete="new-password" :placeholder="t('wifi.passwordHint')" /></label>
@@ -166,7 +165,9 @@ button.radio-switch[aria-checked=true] { background:#22c55e; }
 .switch-thumb { position:absolute; top:2px; left:2px; width:24px; height:24px; border-radius:50%; background:white; box-shadow:0 1px 3px rgb(0 0 0 / .15); transition:transform .15s; }
 .radio-switch[aria-checked=true] .switch-thumb { transform:translateX(28px); }
 button:focus-visible, input:focus-visible, select:focus-visible { outline:2px solid #38bdf8; outline-offset:2px; }
-.band-state { margin-top:10px; font-size:12px; color:var(--wifi-muted); }
+.band-title { display:flex; align-items:baseline; flex-wrap:wrap; gap:4px 8px; }
+.band-title h3 { flex-shrink:0; }
+.band-channel, .hidden-state { font-size:12px; color:var(--wifi-muted); white-space:nowrap; }
 .client-header { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
 .client-header h4 { min-width:0; overflow-wrap:anywhere; }
 .client-band { flex-shrink:0; padding:3px 9px; border-radius:999px; background:rgb(148 163 184 / .12); color:var(--wifi-muted); font-size:12px; font-weight:500; }
