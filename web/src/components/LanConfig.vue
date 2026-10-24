@@ -33,6 +33,7 @@ async function load() {
 }
 
 async function save() {
+  if (addressChanged.value) suggestPool()
   if (!window.confirm(t(addressChanged.value ? 'lan.confirmAddress' : 'lan.confirm'))) return
   busy.value = true
   try {
@@ -124,7 +125,7 @@ onUnmounted(() => clearInterval(migrationPoll))
         <button type="button" class="dhcp-switch" role="switch" :aria-label="t('lan.dhcp')"
           :aria-checked="state.dhcp?.supported ? state.dhcp.enabled : false"
           :class="{ on: state.dhcp?.supported && state.dhcp.enabled }"
-          :disabled="busy || !state.dhcp?.supported || !state.dhcp.consistent" @click="toggleDhcp">
+          :disabled="busy || !!state.migration || state.migration_error || !state.dhcp?.supported || !state.dhcp.consistent" @click="toggleDhcp">
           <span></span>
         </button>
       </div>
@@ -142,7 +143,7 @@ onUnmounted(() => clearInterval(migrationPoll))
         <label>{{ t('lan.netmask') }}<input v-model="netmask" required inputmode="decimal" autocomplete="off" :disabled="busy || !state.address_writable" @change="suggestPool" /></label>
         <label>{{ t('lan.poolStart') }}<input v-model="start" required inputmode="decimal" autocomplete="off" :disabled="busy || !state.pool_writable" /></label>
         <label>{{ t('lan.poolEnd') }}<input v-model="end" required inputmode="decimal" autocomplete="off" :disabled="busy || !state.pool_writable" /></label>
-        <button type="submit" class="save" :disabled="busy || !state.pool_writable || !changed">{{ busy ? t('common.saving') : t('wifi.saveConfig') }}</button>
+        <button type="submit" class="save" :disabled="busy || !state.pool_writable || (addressChanged && !state.address_writable) || !changed">{{ busy ? t('common.saving') : t('wifi.saveConfig') }}</button>
       </form>
       <p class="notice">{{ t('lan.addressWarning', { address: state.recovery_address }) }}</p>
     </template>
