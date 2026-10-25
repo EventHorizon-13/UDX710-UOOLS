@@ -46,6 +46,11 @@ jobs:
           python3 tests/wifi_reload_test.py
           python3 tests/lan_recovery_test.py
 
+      - name: Test same-origin terminal proxy (runner only)
+        run: |
+          gcc -std=gnu11 -Wall -Wextra -g -fsanitize=address,undefined -Isrc tests/terminal_proxy_test.c src/mongoose.c -o /tmp/terminal_proxy_test
+          python3 tests/terminal_proxy_test.py
+
       - name: Cache cross compiler (aarch64)
         uses: actions/cache@v4
         with:
@@ -102,3 +107,4 @@ jobs:
         with:
           name: udx710-tools
           path: output
+

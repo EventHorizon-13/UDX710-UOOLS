@@ -120,6 +120,8 @@ static int verify_request_token(struct mg_http_message *hm) {
   return auth_verify_token(token);
 }
 
+#include "terminal_proxy.h"
+
 /* HTTP 事件处理函数 */
 static void http_handler(struct mg_connection *c, int ev, void *ev_data) {
   if (ev == MG_EV_HTTP_MSG) {
@@ -128,6 +130,9 @@ static void http_handler(struct mg_connection *c, int ev, void *ev_data) {
     size_t uri_len =
         hm->uri.len < sizeof(uri) - 1 ? hm->uri.len : sizeof(uri) - 1;
     memcpy(uri, hm->uri.buf, uri_len);
+
+    if (mg_match(hm->uri, mg_str("/api/terminal/session"), NULL)) { terminal_session(c, hm); return; }
+    if (mg_match(hm->uri, mg_str("/terminal/#"), NULL)) { terminal_proxy(c, hm); return; }
 
     /* 静态文件处理 */
     if (hm->uri.len < 5 || memcmp(hm->uri.buf, "/api/", 5) != 0) {
@@ -562,3 +567,4 @@ void http_server_run(void) {
     }
   }
 }
+
