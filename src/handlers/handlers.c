@@ -1,3 +1,4 @@
+#include <unistd.h>
 ﻿/**
  * @file handlers.c
  * @brief HTTP API handlers implementation (Go: handlers)
@@ -234,6 +235,12 @@ void handle_device_control(struct mg_connection *c,
 
   if (strlen(action) == 0) {
     HTTP_ERROR(c, 400, "Action parameter is required");
+    return;
+  }
+
+  if ((!strcmp(action, "reboot") || !strcmp(action, "poweroff")) &&
+      access("/mnt/data/local-udx710/lan-address.pending", F_OK) == 0) {
+    HTTP_ERROR(c, 409, "LAN address is not saved yet; log in at the new address to finish saving before rebooting");
     return;
   }
 

@@ -198,7 +198,7 @@ function toggleLocale() {
 }
 
 // 当前激活的菜单
-const activeMenu = ref('monitor')
+const activeMenu = ref(new URLSearchParams(window.location.search).get('lan') === 'confirm' ? 'wifi' : 'monitor')
 const sidebarCollapsed = ref(false)
 
 // 移动端适配
@@ -780,3 +780,4 @@ input::-ms-reveal {
   display: none;
 }
 </style>
+

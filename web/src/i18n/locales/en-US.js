@@ -93,12 +93,12 @@ export default {
 
   lan: {
     localAddress: 'Device IPv4',
-    confirmAddress: 'Change the LAN IPv4 address and pool? Log in at the new address and confirm within 2 minutes, or the previous settings will be restored. The fixed maintenance address remains available.',
-    addressPending: 'Address applied temporarily. Log in at the new address to confirm.',
-    addressConfirmed: 'New LAN address confirmed and saved',
-    pendingTitle: 'Confirm the new LAN address',
-    pendingCountdown: 'Log in at the new address and confirm within {seconds} seconds, or the previous settings will be restored.',
-    keepAddress: 'Keep new address',
+    confirmAddress: 'Change the LAN IPv4 address and pool? This page will open the new address and finish saving after login. If it cannot be confirmed within 2 minutes, previous settings will be restored. Do not reboot until saving is complete.',
+    addressPending: 'Connecting to the new address; saving is not complete',
+    addressConfirmed: 'New LAN address saved and retained after reboot',
+    pendingTitle: 'Finishing the address change',
+    pendingCountdown: 'Log in at the new address to finish saving automatically. {seconds} seconds remain before rollback. Do not reboot until saving is complete.',
+    keepAddress: 'Retry confirmation',
     openNewAddress: 'Open new address',
     migrationError: 'Address recovery records are invalid. Inspect recovery before editing.',
     dhcp: 'Automatic DHCP addressing',
@@ -112,7 +112,7 @@ export default {
     disableDhcpFirst: 'Turn off DHCP to edit the local IPv4 address and pool.',
     dhcpRestartRequired: 'LAN configuration changed. Restart CW52 before enabling DHCP again.',
     netmask: 'Netmask', dns: 'System DNS', poolStart: 'DHCP pool start', poolEnd: 'DHCP pool end',
-    addressWarning: 'Maintenance address {address} remains available. Confirm changes from the new address, or they will be restored.',
+    addressWarning: 'Maintenance address {address} remains available. Address changes open the new address and finish saving after login; unconfirmed changes roll back.',
     confirm: 'Apply the DHCP pool? Client renewal may be briefly affected. Changing the LAN address disconnects clients; this save preserves the address and netmask.',
     saved: 'DHCP pool saved and verified', saveError: 'LAN save failed', loadError: 'LAN read failed',
     unsupported: 'CW52 ConnMan DHCP interface not detected'
@@ -1324,4 +1324,5 @@ export default {
     factoryResetFailed: 'Factory reset failed'
   }
 }
+
 

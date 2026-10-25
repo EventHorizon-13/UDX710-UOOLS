@@ -93,12 +93,12 @@
 
   lan: {
     localAddress: '本机 IPv4',
-    confirmAddress: '更改 LAN IPv4 和地址池？保存后须在新地址登录并确认，2 分钟内未确认会自动恢复。固定维护入口将保留。',
-    addressPending: '地址已暂时应用，请到新地址登录确认',
-    addressConfirmed: '新地址已确认保存',
-    pendingTitle: '确认新的 LAN 地址',
-    pendingCountdown: '请从新地址登录后确认；{seconds} 秒内未确认将自动恢复原设置。',
-    keepAddress: '确认保留新地址',
+    confirmAddress: '更改 LAN IPv4 和地址池？页面将转到新地址，登录后自动完成保存；2 分钟内未连通确认会恢复原设置。保存完成前请勿重启。',
+    addressPending: '正在连接新地址，尚未完成保存',
+    addressConfirmed: '新地址已保存，重启后仍然有效',
+    pendingTitle: '正在完成地址保存',
+    pendingCountdown: '请在新地址登录，系统会自动确认保存。剩余 {seconds} 秒；超时将恢复原设置。保存完成前请勿重启。',
+    keepAddress: '重试确认保存',
     openNewAddress: '打开新地址',
     migrationError: '地址恢复记录异常，请检查后再修改。',
     dhcp: 'DHCP 自动分配地址',
@@ -112,7 +112,7 @@
     disableDhcpFirst: '关闭 DHCP 后可修改本机 IPv4 和地址池。',
     dhcpRestartRequired: 'LAN 配置已更改。如需重新开启 DHCP，请先重启 CW52。',
     netmask: '子网掩码', dns: '系统 DNS', poolStart: 'DHCP 起始地址', poolEnd: 'DHCP 结束地址',
-    addressWarning: '维护入口 {address} 保留。保存后需从新地址登录确认，超时自动恢复。同网段接入需将 CW52 网口连接到主路由 LAN。',
+    addressWarning: '维护入口 {address} 保留。更改地址后自动跳转，登录后完成保存；超时自动恢复。同网段接入需将 CW52 网口连接到主路由 LAN。',
     confirm: '保存 DHCP 地址池可能短暂影响客户端续租。更改 LAN 地址会断开连接，本次保留地址和掩码。确认应用？',
     saved: 'DHCP 地址池已保存并核验', saveError: 'LAN 保存失败', loadError: 'LAN 读取失败',
     unsupported: '未检测到 CW52 ConnMan DHCP 接口'
@@ -1339,6 +1339,7 @@
     factoryResetFailed: '恢复出厂设置失败'
   }
 }
+
 
 
 

@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { authFetch } from '../composables/useApi'
 import { useToast } from '../composables/useToast'
+import { createMigrationCompletion, migrationAddressUrl } from '../composables/lanMigration.mjs'
 
 const { t } = useI18n()
 const { success, error: showError } = useToast()
@@ -16,7 +17,21 @@ const addressChanged = computed(() => state.value && (address.value.trim() !== s
 const changed = computed(() => addressChanged.value || start.value !== state.value?.pool_start || end.value !== state.value?.pool_end)
 let migrationPoll
 
-async function load() {
+const settleMigration = createMigrationCompletion({
+  confirm: async id => {
+    const response = await authFetch('/api/lan', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'confirm_address', id, confirm: true })
+    })
+    const result = await response.json()
+    if (!response.ok || result.Code !== 0) throw new Error(result.error || result.Error || response.status)
+  },
+  navigate: url => window.location.assign(url),
+  onConfirmed: () => success(t('lan.addressConfirmed')),
+  onError: err => showError(t('lan.saveError') + ': ' + err.message)
+})
+
+async function load(options = {}) {
   busy.value = true
   try {
     const response = await authFetch('/api/lan')
@@ -27,12 +42,14 @@ async function load() {
     netmask.value = result.Data.netmask || ''
     start.value = result.Data.pool_start || ''
     end.value = result.Data.pool_end || ''
+    if (await settleMigration(result.Data, options)) await load()
   } catch (err) {
     showError(t('lan.loadError') + ': ' + err.message)
   } finally { busy.value = false }
 }
 
 async function save() {
+  const savingAddress = addressChanged.value
   if (addressChanged.value) suggestPool()
   if (!window.confirm(t(addressChanged.value ? 'lan.confirmAddress' : 'lan.confirm'))) return
   busy.value = true
@@ -43,8 +60,8 @@ async function save() {
     })
     const result = await response.json()
     if (!response.ok || result.Code !== 0) throw new Error(result.error || result.Error || response.status)
-    success(t(addressChanged.value ? 'lan.addressPending' : 'lan.saved'))
-    await load()
+    if (!savingAddress) success(t('lan.saved'))
+    await load({ redirect: savingAddress })
   } catch (err) {
     showError(t('lan.saveError') + ': ' + err.message)
   } finally { busy.value = false }
@@ -94,16 +111,8 @@ function suggestPool() {
 async function confirmMigration() {
   busy.value = true
   try {
-    const response = await authFetch('/api/lan', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'confirm_address', id: state.value.migration.id, confirm: true })
-    })
-    const result = await response.json()
-    if (!response.ok || result.Code !== 0) throw new Error(result.error || result.Error || response.status)
-    success(t('lan.addressConfirmed'))
-    await load()
-  } catch (err) { showError(t('lan.saveError') + ': ' + err.message) }
-  finally { busy.value = false }
+    if (await settleMigration(state.value, { force: true })) await load()
+  } finally { busy.value = false }
 }
 onMounted(() => {
   load()
@@ -137,7 +146,7 @@ onUnmounted(() => clearInterval(migrationPoll))
         <strong>{{ t('lan.pendingTitle') }}</strong>
         <p>{{ t('lan.pendingCountdown', { seconds: state.migration.seconds_left }) }}</p>
         <button v-if="state.migration.confirmable" type="button" class="save" :disabled="busy" @click="confirmMigration">{{ t('lan.keepAddress') }}</button>
-        <a v-else :href="`http://${state.migration.address}:6677/`" target="_blank" rel="noopener noreferrer">{{ t('lan.openNewAddress') }} ↗</a>
+        <a v-else :href="migrationAddressUrl(state.migration.address)">{{ t('lan.openNewAddress') }} ↗</a>
       </div>
       <p v-if="state.migration_error" class="dhcp-warning" role="alert">{{ t('lan.migrationError') }}</p>
       <form @submit.prevent="save">
@@ -180,3 +189,4 @@ button.dhcp-switch.on { background:#0284c7; }
 @media (prefers-reduced-motion:reduce) { button.dhcp-switch,.dhcp-switch span { transition:none; } }
 .notice { font-size:12px; color:var(--wifi-muted); margin-top:12px; line-height:1.6; }
 </style>
+
