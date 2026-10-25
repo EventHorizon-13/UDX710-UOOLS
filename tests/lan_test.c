@@ -2,8 +2,8 @@
 #include "../src/system/lan.c"
 
 
-/* Real TCP listeners on separate loopback addresses reproduce ttyd bound only
- * to the new LAN IP, without touching interfaces or privileged ports. */
+/* Real TCP listeners reproduce the UDX app at the selected LAN address and
+ * the original management page at the recovery address. */
 static int test_listener(const char *address, unsigned short *port) {
   int fd=socket(AF_INET,SOCK_STREAM,0);
   assert(fd>=0);
@@ -18,20 +18,19 @@ static int test_listener(const char *address, unsigned short *port) {
 }
 
 static void test_management_bindings(void) {
-  unsigned short web_port=0,terminal_port=0;
-  int web=test_listener("127.0.0.1",&web_port);
-  int terminal=test_listener("127.0.0.2",&terminal_port);
-  assert(!management_tcp_reachable("127.0.0.1",terminal_port));
-  assert(management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
-  close(terminal);
-  assert(!management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
-  terminal=test_listener("127.0.0.1",&terminal_port);
-  assert(management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
-  assert(management_services_reachable("127.0.0.1","127.0.0.1",web_port,terminal_port));
-  close(web);
-  assert(!management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
-  assert(!management_tcp_reachable("invalid",terminal_port));
-  close(terminal);
+  unsigned short app_port=0,maintenance_port=0;
+  int app=test_listener("127.0.0.2",&app_port);
+  int maintenance=test_listener("127.0.0.1",&maintenance_port);
+  assert(!management_tcp_reachable("127.0.0.1",app_port));
+  assert(management_services_reachable("127.0.0.2","127.0.0.1",app_port,maintenance_port));
+  close(app);
+  assert(!management_services_reachable("127.0.0.2","127.0.0.1",app_port,maintenance_port));
+  app=test_listener("127.0.0.1",&app_port);
+  assert(management_services_reachable("127.0.0.1","127.0.0.1",app_port,maintenance_port));
+  close(maintenance);
+  assert(!management_services_reachable("127.0.0.1","127.0.0.1",app_port,maintenance_port));
+  assert(!management_tcp_reachable("invalid",app_port));
+  close(app);
 }
 
 int main(void) {
@@ -76,4 +75,5 @@ int main(void) {
   puts("LAN validation tests passed (no network writes)");
   return 0;
 }
+
 
