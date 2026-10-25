@@ -14,11 +14,12 @@ class RollbackTest(unittest.TestCase):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.root=Path(self.tmp.name);self.tx=self.root/'transaction';self.tx.mkdir();self.bin=self.root/'bin';self.bin.mkdir()
         s=SOURCE.replace('/tmp/fixture',str(self.tx))
-        for old,new in [('/mnt/data/local-udx710/lan-address.pending',self.root/'pending'),('/mnt/data/local-udx710/lan-dhcp.state',self.root/'dhcp-state'),('/mnt/data/local-udx710/lan-dhcp-reload.boot',self.root/'reload-boot'),('/var/mm/dhcp_config.ini',self.root/'config'),('/home/root/6677/cw52-lan-recovery.sh',self.root/'helper'),('/run/udx710-lan.lock',self.root/'lock')]:s=s.replace(old,str(new))
+        for old,new in [('/mnt/data/local-udx710/lan-address.pending',self.root/'pending'),('/mnt/data/local-udx710/lan-dhcp.state',self.root/'dhcp-state'),('/mnt/data/local-udx710/lan-dhcp-reload.boot',self.root/'reload-boot'),('/var/mm/dhcp_config.ini',self.root/'config'),('/home/root/6677/cw52-lan-recovery.sh',self.root/'helper'),('/home/root/6677/cw52-ttyd-rebind.sh',self.root/'terminal-helper'),('/run/udx710-lan.lock',self.root/'lock')]:s=s.replace(old,str(new))
         (self.tx/'rollback.sh').write_text(s);(self.tx/'dhcp_config.ini.before').write_text('old-config');(self.tx/'dhcp-reload.absent').write_text('')
         (self.root/'reload-boot').write_text('current-boot')
         (self.root/'config').write_text('new-config');(self.root/'pending').write_text(str(self.tx));(self.root/'lock').write_text(str(self.tx))
         (self.root/'helper').write_text('#!/bin/sh\nexit 0\n')
+        (self.root/'terminal-helper').write_text('#!/bin/sh\n[ "$(cat '+str(self.root/'config')+')" = old-config ] || exit 1\n[ ! -e '+str(self.root/'terminal-fail')+' ]\n')
         fake='''#!/usr/bin/python3
 import os,sys,json
 from pathlib import Path
@@ -42,6 +43,11 @@ if tool=='iptables' and '-C' in sys.argv:sys.exit(1)
         self.assertFalse((self.root/'pending').exists());self.assertFalse((self.root/'lock').exists())
         self.assertFalse((self.root/'reload-boot').exists())
         events=(self.root/'events').read_text();self.assertIn('CW52_LAN_DHCP',events);self.assertNotIn('flush',events)
+    def test_terminal_rebind_failure_keeps_recovery_armed(self):
+        (self.root/'terminal-fail').touch()
+        self.assertNotEqual(self.run_rollback().returncode,0)
+        self.assertTrue((self.root/'pending').exists())
+        self.assertTrue((self.root/'lock').exists())
     def test_restores_a_preexisting_dhcp_reload_requirement(self):
         (self.tx/'dhcp-reload.absent').unlink()
         (self.tx/'dhcp-reload.before').write_text('previous-boot')

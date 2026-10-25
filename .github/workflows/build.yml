@@ -45,6 +45,8 @@ jobs:
           sh -n cw52-hostapd-cli.sh
           python3 tests/wifi_reload_test.py
           python3 tests/lan_recovery_test.py
+          sh -n cw52-ttyd-rebind.sh
+          python3 tests/ttyd_rebind_test.py
 
       - name: Test same-origin terminal proxy (runner only)
         run: |
@@ -100,6 +102,7 @@ jobs:
           cp src/build/ofono-server output/6677/server
           install -m 755 cw52-hostapd-cli.sh output/6677/cw52-hostapd-cli.sh
           install -m 755 cw52-lan-recovery.sh output/6677/cw52-lan-recovery.sh
+          install -m 755 cw52-ttyd-rebind.sh output/6677/cw52-ttyd-rebind.sh
           sh -n cw52-lan-recovery.sh
 
       - name: Upload artifact

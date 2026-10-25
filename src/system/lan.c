@@ -194,6 +194,12 @@ static int management_services_reachable(const char *lan, const char *recovery,
      (strcmp(lan, recovery) && management_tcp_reachable(recovery, terminal_port)));
 }
 
+#define LAN_TERMINAL_REBIND "/home/root/6677/cw52-ttyd-rebind.sh"
+static int rebind_terminal(void) {
+  char out[1024];
+  return !run_command(out,sizeof(out),"/bin/sh",LAN_TERMINAL_REBIND,NULL);
+}
+
 static int management_reachable(const LanConfig *v) {
   return lan_address_present(v) && recovery_present() &&
     management_services_reachable(v->address, LAN_RECOVERY_IP, 80, 7681);
@@ -605,6 +611,7 @@ static char *migration_rollback_script(const char *dir,const LanConfig *old,cons
     "cp -p dhcp_config.ini.before " LAN_FILE ".rollback && mv -f " LAN_FILE ".rollback " LAN_FILE " || exit 1\n"
     "ip -4 address replace %s dev tether || exit 1\n%s"
     "/bin/sh " LAN_RECOVERY_HELPER " || exit 1\n"
+    "/bin/sh " LAN_TERMINAL_REBIND " || exit 1\n"
     "if [ \"$(cat " DHCP_STATE " 2>/dev/null)\" = disabled ]; then\n"
     " iptables -w 2 -N " DHCP_CHAIN " 2>/dev/null || :\n"
     " iptables -w 2 -C " DHCP_CHAIN " -j DROP 2>/dev/null || iptables -w 2 -A " DHCP_CHAIN " -j DROP || exit 1\n"
@@ -666,7 +673,7 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   if(same_config(&old,&next)) { HTTP_JSON(c,200,"{\"Code\":0,\"Data\":\"unchanged\"}");goto done; }
   if(dhcp_before.actual) { HTTP_ERROR(c,409,"turn off CW52 LAN DHCP before changing its IPv4 address");goto done; }
   if(!strcmp(old.address,next.address) && !strcmp(old.mask,next.mask)) { HTTP_ERROR(c,400,"use the DHCP pool save operation for pool-only changes");goto done; }
-  if(access(LAN_RECOVERY_HELPER,R_OK)||access("/usr/bin/flock",X_OK)||!ensure_recovery()||!management_reachable(&old)) { HTTP_ERROR(c,409,"maintenance recovery path unavailable; no changes applied");goto done; }
+  if(access(LAN_RECOVERY_HELPER,R_OK)||access(LAN_TERMINAL_REBIND,R_OK)||access("/usr/bin/flock",X_OK)||!ensure_recovery()||!management_reachable(&old)) { HTTP_ERROR(c,409,"maintenance recovery path unavailable; no changes applied");goto done; }
   if(strcmp(old.address,next.address) && strcmp(next.address,LAN_RECOVERY_IP)) {
     char out[1024];if(run_command(out,sizeof(out),"/bin/arping","-D","-q","-c","2","-w","3","-I","tether",next.address,NULL)) { HTTP_ERROR(c,409,"the new address is in use or the duplicate-address probe failed");goto done; }
   }
@@ -701,6 +708,7 @@ static void address_save(struct mg_connection *c,struct mg_http_message *hm) {
   if(!web_subnet_rule(&next,1)||!nat_subnet_rule(&next,1)||!nat_recovery_rule(&next)||!dhcp_rules_apply(0))goto failed;
   stage="configuration readback";if(!read_live(&actual)||!same_config(&actual,&next))goto failed;
   stage="LAN route verification";if(!lan_route_reaches_tether(&next))goto failed;
+  stage="terminal address binding";if(!rebind_terminal())goto failed;
   stage="maintenance verification";if(!management_reachable(&next))goto failed;
   char *oldnet=address_cidr(&old,1),*newnet=address_cidr(&next,1);int same_net=!strcmp(oldnet,newnet);g_free(oldnet);g_free(newnet);
   stage="previous subnet policy cleanup";if(!same_net && (!web_subnet_rule(&old,0)||!nat_subnet_rule(&old,0)))goto failed;
