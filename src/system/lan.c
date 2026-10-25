@@ -169,22 +169,34 @@ static int lan_address_present(const LanConfig *v) {
   freeifaddrs(all); return found;
 }
 
-static int management_reachable(const LanConfig *v) {
-  const int ports[] = {80, 7681};
-  for (size_t i = 0; i < 2; i++) {
-    int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
-    if (fd < 0) return 0;
-    struct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons(ports[i])};
-    inet_pton(AF_INET, LAN_RECOVERY_IP, &a.sin_addr);
-    int rc = connect(fd, (struct sockaddr *)&a, sizeof(a));
-    if (rc && errno == EINPROGRESS) {
-      fd_set wf; FD_ZERO(&wf); FD_SET(fd, &wf); struct timeval tv = {1, 0};
-      int err = 1; socklen_t n = sizeof(err);
-      rc = select(fd + 1, NULL, &wf, NULL, &tv) > 0 && !getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &n) && !err ? 0 : -1;
-    }
-    close(fd); if (rc) return 0;
+/* Probe the terminal where start.sh binds it: the saved LAN address.
+ * Keep the recovery-address fallback for older ttyd installations. */
+static int management_tcp_reachable(const char *address, unsigned short port) {
+  struct sockaddr_in a = {.sin_family = AF_INET, .sin_port = htons(port)};
+  if (inet_pton(AF_INET, address, &a.sin_addr) != 1) return 0;
+  int fd = socket(AF_INET, SOCK_STREAM | SOCK_NONBLOCK, 0);
+  if (fd < 0) return 0;
+  int rc = connect(fd, (struct sockaddr *)&a, sizeof(a));
+  if (rc && errno == EINPROGRESS) {
+    fd_set wf; FD_ZERO(&wf); FD_SET(fd, &wf); struct timeval tv = {1, 0};
+    int err = 1; socklen_t n = sizeof(err);
+    rc = select(fd + 1, NULL, &wf, NULL, &tv) > 0 &&
+      !getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &n) && !err ? 0 : -1;
   }
-  return lan_address_present(v) && recovery_present();
+  close(fd);
+  return rc == 0;
+}
+
+static int management_services_reachable(const char *lan, const char *recovery,
+                                         unsigned short web_port, unsigned short terminal_port) {
+  return management_tcp_reachable(recovery, web_port) &&
+    (management_tcp_reachable(lan, terminal_port) ||
+     (strcmp(lan, recovery) && management_tcp_reachable(recovery, terminal_port)));
+}
+
+static int management_reachable(const LanConfig *v) {
+  return lan_address_present(v) && recovery_present() &&
+    management_services_reachable(v->address, LAN_RECOVERY_IP, 80, 7681);
 }
 
 /* Independent executable watchdog survives server exit. Recovery materials are
@@ -848,4 +860,5 @@ void handle_lan(struct mg_connection *c, struct mg_http_message *hm) {
   }
   else http_method_error(c);
 }
+
 

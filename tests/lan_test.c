@@ -1,7 +1,41 @@
 #include <assert.h>
 #include "../src/system/lan.c"
 
+
+/* Real TCP listeners on separate loopback addresses reproduce ttyd bound only
+ * to the new LAN IP, without touching interfaces or privileged ports. */
+static int test_listener(const char *address, unsigned short *port) {
+  int fd=socket(AF_INET,SOCK_STREAM,0);
+  assert(fd>=0);
+  struct sockaddr_in a={.sin_family=AF_INET,.sin_port=htons(*port)};
+  assert(inet_pton(AF_INET,address,&a.sin_addr)==1);
+  assert(bind(fd,(struct sockaddr *)&a,sizeof(a))==0);
+  socklen_t n=sizeof(a);
+  assert(getsockname(fd,(struct sockaddr *)&a,&n)==0);
+  *port=ntohs(a.sin_port);
+  assert(listen(fd,16)==0);
+  return fd;
+}
+
+static void test_management_bindings(void) {
+  unsigned short web_port=0,terminal_port=0;
+  int web=test_listener("127.0.0.1",&web_port);
+  int terminal=test_listener("127.0.0.2",&terminal_port);
+  assert(!management_tcp_reachable("127.0.0.1",terminal_port));
+  assert(management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
+  close(terminal);
+  assert(!management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
+  terminal=test_listener("127.0.0.1",&terminal_port);
+  assert(management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
+  assert(management_services_reachable("127.0.0.1","127.0.0.1",web_port,terminal_port));
+  close(web);
+  assert(!management_services_reachable("127.0.0.2","127.0.0.1",web_port,terminal_port));
+  assert(!management_tcp_reachable("invalid",terminal_port));
+  close(terminal);
+}
+
 int main(void) {
+  test_management_bindings();
   LanConfig v;
   assert(parse_config("192.168.1.1,255.255.255.0,192.168.1.2,192.168.1.254,0",&v));
   assert(valid_pool(&v));
@@ -42,3 +76,4 @@ int main(void) {
   puts("LAN validation tests passed (no network writes)");
   return 0;
 }
+
