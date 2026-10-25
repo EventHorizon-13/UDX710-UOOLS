@@ -533,7 +533,14 @@ static int read_migration(AddressMigration *m) {
 done:g_free(dir);g_free(before);g_free(after);g_free(deadline);g_free(boot);g_free(current);g_free(path);return result;
 }
 static int confirmed_address_socket(const struct mg_connection *c,const char *address) {
-  struct in_addr a;return !c->loc.is_ip6 && inet_pton(AF_INET,address,&a)==1 && !memcmp(c->loc.addr.ip,&a,4);
+  /* Mongoose can retain the wildcard listener address in c->loc on accept.
+   * Read the connected socket's actual destination, never Host/proxy headers. */
+  struct sockaddr_storage local; socklen_t len=sizeof(local);struct in_addr wanted;
+  if(!c || c->is_listening || c->is_udp || !c->fd ||
+     inet_pton(AF_INET,address,&wanted)!=1 ||
+     getsockname((int)(intptr_t)c->fd,(struct sockaddr *)&local,&len) ||
+     local.ss_family!=AF_INET || len<sizeof(struct sockaddr_in))return 0;
+  return ((struct sockaddr_in *)&local)->sin_addr.s_addr==wanted.s_addr;
 }
 /* Strict schemas are independent from the pool-only and DHCP switch APIs. */
 static int address_request(struct mg_str body,int confirm_action) {
@@ -841,3 +848,4 @@ void handle_lan(struct mg_connection *c, struct mg_http_message *hm) {
   }
   else http_method_error(c);
 }
+

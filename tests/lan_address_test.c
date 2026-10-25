@@ -33,11 +33,23 @@ int main(int argc,char **argv) {
   assert(!address_request(mg_str("{\"action\":\"address\",\"address\":\"10.0.0.52\",\"netmask\":\"255.255.255.0\",\"pool_start\":\"10.0.0.100\",\"pool_end\":\"10.0.0.254\",\"version\":\"v\",\"confirm\":true,\"confirm\":false}"),0));
   assert(address_request(mg_str("{\"action\":\"confirm_address\",\"id\":\"lan-address-AbC123\",\"confirm\":true}"),1));
   assert(!address_request(mg_str("{\"action\":\"confirm_address\",\"id\":\"lan-address-AbC123\",\"confirm\":\"true\"}"),1));
-  struct mg_connection c={0};inet_pton(AF_INET,"192.168.1.1",c.loc.addr.ip);
-  assert(!confirmed_address_socket(&c,"10.0.0.52"));inet_pton(AF_INET,"10.0.0.52",c.loc.addr.ip);assert(confirmed_address_socket(&c,"10.0.0.52"));
-  c.loc.is_ip6=true;assert(!confirmed_address_socket(&c,"10.0.0.52"));
+  struct mg_connection c={0};inet_pton(AF_INET,"10.0.0.52",c.loc.addr.ip);
+  assert(!confirmed_address_socket(&c,"10.0.0.52"));
+  int listener=socket(AF_INET,SOCK_STREAM,0),client=socket(AF_INET,SOCK_STREAM,0);assert(listener>=0 && client>=0);
+  struct sockaddr_in endpoint={.sin_family=AF_INET};inet_pton(AF_INET,"127.0.0.1",&endpoint.sin_addr);
+  assert(!bind(listener,(struct sockaddr *)&endpoint,sizeof(endpoint)) && !listen(listener,1));
+  socklen_t endpoint_len=sizeof(endpoint);assert(!getsockname(listener,(struct sockaddr *)&endpoint,&endpoint_len));
+  assert(!connect(client,(struct sockaddr *)&endpoint,sizeof(endpoint)));
+  int accepted=accept(listener,NULL,NULL);assert(accepted>=0);c.fd=(void *)(intptr_t)accepted;
+  /* Deliberately incorrect cached metadata, as with the wildcard listener. */
+  assert(confirmed_address_socket(&c,"127.0.0.1"));
+  assert(!confirmed_address_socket(&c,"10.0.0.52"));
+  c.is_listening=true;assert(!confirmed_address_socket(&c,"127.0.0.1"));c.is_listening=false;
+  c.is_udp=true;assert(!confirmed_address_socket(&c,"127.0.0.1"));c.is_udp=false;
+  close(accepted);close(client);close(listener);
   char *script=migration_rollback_script("/tmp/fixture",&old,&next);
   assert(strstr(script,"flock -x 9") && strstr(script,"while [ $n -lt 120 ]") && strstr(script,"committed"));
   assert(!strstr(script,"address flush") && !strstr(script,"-F INPUT"));g_free(script);
   puts("LAN address validation and confirmation tests passed (no network writes)");return 0;
 }
+
