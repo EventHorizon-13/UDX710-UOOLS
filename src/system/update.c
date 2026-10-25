@@ -18,6 +18,26 @@ const char* update_get_version(void) {
     return FIRMWARE_VERSION;
 }
 
+/* Compare numeric versions and retain the CW52 channel. Foreign prereleases
+ * and upstream-only packages must not replace device-specific adaptations. */
+static int parse_update_version(const char *s,unsigned parts[4],int *cw52) {
+  if(!s || strlen(s)>31)return 0;
+  int n=0;*cw52=0;parts[3]=0;
+  if(sscanf(s,"%u.%u.%u-cw52.%u%n",&parts[0],&parts[1],&parts[2],&parts[3],&n)==4 && n==(int)strlen(s)) *cw52=1;
+  else {
+    n=0;parts[3]=0;
+    if(sscanf(s,"%u.%u.%u%n",&parts[0],&parts[1],&parts[2],&n)!=3 || n!=(int)strlen(s))return 0;
+  }
+  for(int i=0;i<4;i++)if(parts[i]>9999)return 0;
+  return 1;
+}
+int update_version_is_newer(const char *candidate,const char *current) {
+  unsigned a[4],b[4];int ac,bc;
+  if(!parse_update_version(candidate,a,&ac) || !parse_update_version(current,b,&bc) || (bc && !ac))return 0;
+  for(int i=0;i<4;i++) {if(a[i]!=b[i])return a[i]>b[i];}
+  return 0;
+}
+
 /* 从URL下载更新包 */
 int update_download(const char *url) {
     char output[1024];
@@ -165,3 +185,4 @@ int update_check_version(const char *check_url, update_info_t *info) {
 const char* update_get_embedded_url(void) {
     return UPDATE_CHECK_URL;
 }
+

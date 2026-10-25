@@ -928,7 +928,7 @@ void handle_update_check(struct mg_connection *c, struct mg_http_message *hm) {
   update_info_t info;
   if (update_check_version(check_url, &info) == 0) {
     const char *current = update_get_version();
-    int has_update = strcmp(info.version, current) > 0 ? 1 : 0;
+    int has_update = info.url[0] && update_version_is_newer(info.version, current);
 
     JsonBuilder *j = json_new();
     json_obj_open(j);

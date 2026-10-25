@@ -13,7 +13,7 @@ extern "C" {
 #endif
 
 /* 当前固件版本 */
-#define FIRMWARE_VERSION "2.3.5"
+#define FIRMWARE_VERSION "2.4.0-cw52.1"
 
 /* 更新文件路径 */
 #define UPDATE_TMP_DIR "/tmp"
@@ -22,7 +22,7 @@ extern "C" {
 #define UPDATE_INSTALL_SCRIPT "/tmp/update/install.sh"
 
 /* 版本检查URL（编译时嵌入） */
-#define UPDATE_CHECK_URL "https://gitee.com/C_Rabe/leo/raw/master/version.json"
+#define UPDATE_CHECK_URL "https://raw.githubusercontent.com/EventHorizon-13/UDX710-UOOLS/main/version.json"
 
 /* 安装脚本签名配置文件 */
 #define UPDATE_CONFIG_FILE "/tmp/update/configuration.json"
@@ -41,6 +41,7 @@ typedef struct {
  * @return 版本字符串
  */
 const char *update_get_version(void);
+int update_version_is_newer(const char *candidate, const char *current);
 
 /**
  * @brief 获取嵌入的版本检查URL
@@ -87,3 +88,4 @@ int update_check_version(const char *check_url, update_info_t *info);
 #endif
 
 #endif /* UPDATE_H */
+

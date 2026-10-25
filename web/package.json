@@ -1,6 +1,6 @@
 {
   "name": "5g-mifi-dashboard",
-  "version": "1.0.0",
+  "version": "2.4.0-cw52.1",
   "private": true,
   "type": "module",
   "scripts": {

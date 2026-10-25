@@ -1,3 +1,9 @@
+# CW52 分支 · 2.4.0-cw52.1
+
+此 fork 针对 CW52 设备维护；当前应用版本 `2.4.0-cw52.1`，不是设备原厂固件版本。上游项目及原有说明保留在下方。
+
+本版本包含 Wi-Fi 隐藏、无加密/WPA2-PSK、每频段 1–32 台连接数设置，及 SIM 卡槽 ICCID；沿用既有 LAN/DHCP、稳定性和同源 TTYD 适配。更新检查使用本仓库的 `version.json`，不使用上游 Gitee 更新源。版本清单的 URL 为空时不提供在线安装；GitHub Actions 构建产物不等于已发布的自动升级包。
+
 # 5G MiFi Dashboard(UDX710)
 
 [🇨🇳 中文文档](README_CN.md)

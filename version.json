@@ -1,0 +1,7 @@
+{
+  "version": "2.4.0-cw52.1",
+  "url": "",
+  "size": 0,
+  "required": false,
+  "changelog": "CW52 分支：补齐 Wi-Fi 隐藏、WPA2/无加密和最大连接数；SIM 卡槽显示 ICCID。包含此前 LAN/DHCP、稳定性与同源 TTYD 适配。安装包尚未单独发布时不提供在线安装。"
+}
