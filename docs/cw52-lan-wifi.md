@@ -223,6 +223,16 @@ DHCP gate remains disabled until the user enables it. Both pool and address
 rollback restore the previous marker, including its absence. This prevents old
 DHCP offers from being silently presented as a newly applied pool.
 
+Some vendor boot paths restore the previous non-maintenance address on
+`tether` (and previously on bridge members) even after the persistent LAN file
+has changed. The saved ConnMan property alone is therefore not treated as proof
+that the kernel address was applied. On backend startup without a pending
+transaction, the persisted LAN configuration is reconciled against the real
+interfaces: stale non-maintenance addresses are removed from `tether`,
+`sipa_usb0`, `usb0`, `wlan0` and `wlan1`, and Tethering is reinitialized so the
+embedded DHCP server reloads the current pool. `/api/lan` exposes
+`kernel_consistent` and blocks address/pool writes while a mismatch remains.
+
 These operations do not restart ConnMan, toggle Tethering, rebuild the bridge,
 or invoke mm_app_service. Joining the main router's LAN also requires a physical
 layer-2 connection; a separate routed host interface is not automatically bridged

@@ -109,6 +109,7 @@ export default {
     dhcpOff: 'LAN DHCP disabled',
     dhcpUnavailable: 'DHCP state unavailable or inconsistent. Refresh or inspect recovery records.',
     dhcpOffNotice: 'Automatic addressing is off. New connections need another DHCP server or manual addresses.',
+    kernelMismatch: 'The saved LAN address is not active on tether. Startup reconciliation will remove the old address and reload DHCP.',
     disableDhcpFirst: 'Turn off DHCP to edit the local IPv4 address and pool.',
     dhcpRestartRequired: 'LAN configuration changed. Restart CW52 before enabling DHCP again.',
     netmask: 'Netmask', dns: 'System DNS', poolStart: 'DHCP pool start', poolEnd: 'DHCP pool end',

@@ -13,6 +13,10 @@ int main(int argc,char **argv) {
   assert(parse_config("10.0.0.52,255.255.255.0,10.0.0.100,10.0.0.254,0",&next));assert(valid_address_config(&next));
   assert(mask_prefix("255.255.255.0")==24 && mask_prefix("255.255.255.252")==30);
   assert(mask_prefix("255.0.255.0")==-1 && mask_prefix("0.0.0.0")==-1);
+  assert(mask_prefix_u32(0xffffff00U)==24 && mask_prefix_u32(0xfffffffcU)==30);
+  assert(mask_prefix_u32(0xff00ff00U)==-1 && mask_prefix_u32(0)==0);
+  assert(lan_addr_is_managed(&old,0xc0a80101U));
+  assert(!lan_addr_is_managed(&old,0x0a0000feU));
   assert(!private_network(0x0a000001U,0xfe000000U));
   assert(parse_config("192.168.1.254,255.255.255.0,192.168.1.2,192.168.1.253,0",&next));assert(valid_address_config(&next));
   strcpy(next.start,"192.168.1.1");assert(!valid_pool(&next));

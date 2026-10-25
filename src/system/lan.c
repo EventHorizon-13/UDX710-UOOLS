@@ -46,6 +46,12 @@ static int ipv4(const char *s, uint32_t *n) {
   return 1;
 }
 
+static int mask_prefix_u32(uint32_t mask) {
+  int prefix=0;
+  while(mask&0x80000000U){prefix++;mask<<=1;}
+  return mask?-1:prefix;
+}
+
 static int valid_pool(const LanConfig *v) {
   uint32_t a, m, s, e;
   if (!ipv4(v->address, &a) || !ipv4(v->mask, &m) ||
@@ -167,6 +173,113 @@ static int lan_address_present(const LanConfig *v) {
         ntohl(((struct sockaddr_in *)p->ifa_addr)->sin_addr.s_addr) == address &&
         ntohl(((struct sockaddr_in *)p->ifa_netmask)->sin_addr.s_addr) == mask) found = 1;
   freeifaddrs(all); return found;
+}
+
+static int read_persisted(LanConfig *v) {
+  char *data=NULL; gsize len=0;
+  GKeyFile *kf=g_key_file_new();
+  int ok=g_file_get_contents(LAN_FILE,&data,&len,NULL) &&
+    g_key_file_load_from_data(kf,data,len,G_KEY_FILE_KEEP_COMMENTS,NULL);
+  char *s=g_key_file_get_string(kf,"global","gateway_ip",NULL);
+  char *m=g_key_file_get_string(kf,"global","mask",NULL);
+  char *start=g_key_file_get_string(kf,"global","start_ip",NULL);
+  char *end=g_key_file_get_string(kf,"global","end_ip",NULL);
+  ok=ok && s && m && start && end &&
+    g_key_file_has_key(kf,"global","ttl",NULL);
+  if(ok) {
+    g_strlcpy(v->address,s,16);g_strlcpy(v->mask,m,16);
+    g_strlcpy(v->start,start,16);g_strlcpy(v->end,end,16);
+    v->ttl=g_key_file_get_integer(kf,"global","ttl",NULL);
+    ok=valid_pool(v);
+  }
+  g_free(s);g_free(m);g_free(start);g_free(end);g_free(data);
+  g_key_file_free(kf);return ok;
+}
+
+static int lan_addr_is_managed(const LanConfig *v,uint32_t address) {
+  uint32_t wanted=0,recovery=0;
+  ipv4(v->address,&wanted);ipv4(LAN_RECOVERY_IP,&recovery);
+  return address==wanted || address==recovery;
+}
+
+/* Reconcile a stale kernel address left by the vendor after reboot.  Only
+ * addresses observed on tether and not equal to the persisted LAN or the
+ * maintenance alias are touched; the same address is also removed from the
+ * bridge's member interfaces so it cannot win a same-subnet route lookup. */
+static int remove_stale_lan_addresses(const LanConfig *v) {
+  struct ifaddrs *all;
+  if(getifaddrs(&all))return -1;
+  typedef struct { uint32_t address,mask; } StaleAddress;
+  GArray *stale=g_array_new(FALSE,FALSE,sizeof(StaleAddress));
+  for(struct ifaddrs *p=all;p;p=p->ifa_next) {
+    if(!p->ifa_addr||!p->ifa_netmask||p->ifa_addr->sa_family!=AF_INET||
+       strcmp(p->ifa_name,"tether"))continue;
+    uint32_t address=ntohl(((struct sockaddr_in *)p->ifa_addr)->sin_addr.s_addr);
+    uint32_t mask=ntohl(((struct sockaddr_in *)p->ifa_netmask)->sin_addr.s_addr);
+    if(lan_addr_is_managed(v,address))continue;
+    StaleAddress item={address,mask};g_array_append_val(stale,item);
+  }
+  freeifaddrs(all);
+  const char *interfaces[]={"tether","sipa_usb0","usb0","wlan0","wlan1"};
+  int changed=0,ok=1;
+  for(guint i=0;i<stale->len&&ok;i++) {
+    StaleAddress item=g_array_index(stale,StaleAddress,i);
+    int prefix=mask_prefix_u32(item.mask);
+    if(prefix<0) {ok=0;break;}
+    struct in_addr raw={.s_addr=htonl(item.address)};
+    char ip[INET_ADDRSTRLEN],cidr[32],out[1024];
+    if(!inet_ntop(AF_INET,&raw,ip,sizeof(ip))) {ok=0;break;}
+    snprintf(cidr,sizeof(cidr),"%s/%d",ip,prefix);
+    for(size_t n=0;n<sizeof(interfaces)/sizeof(interfaces[0]);n++) {
+      if(run_command(out,sizeof(out),"/sbin/ip","-4","address","del",cidr,"dev",(char *)interfaces[n],NULL)==0) {
+        changed=1;
+      }
+    }
+  }
+  g_array_free(stale,TRUE);
+  return ok?changed:-1;
+}
+
+static int lan_kernel_consistent(const LanConfig *v) {
+  struct ifaddrs *all;
+  if(getifaddrs(&all))return 0;
+  uint32_t wanted=0;
+  if(!ipv4(v->address,&wanted)){freeifaddrs(all);return 0;}
+  int desired=0,stale=0;
+  for(struct ifaddrs *p=all;p;p=p->ifa_next) {
+    if(!p->ifa_addr||p->ifa_addr->sa_family!=AF_INET||strcmp(p->ifa_name,"tether"))continue;
+    uint32_t address=ntohl(((struct sockaddr_in *)p->ifa_addr)->sin_addr.s_addr);
+    if(address==wanted)desired=1;
+    else if(!lan_addr_is_managed(v,address))stale=1;
+  }
+  freeifaddrs(all);return desired&&!stale;
+}
+
+static int schedule_tethering_reload(void) {
+  const char *path=LAN_BACKUPS "/tethering-reload.sh";
+  const char *log=LAN_BACKUPS "/tethering-reload.log";
+  char *script=g_strdup_printf(
+    "#!/bin/sh\nL=%s\necho \"$(date +%%s) runtime reload requested\" >\"$L\"\n"
+    "sleep 3\n"
+    "dbus-send --system --print-reply --reply-timeout=10000 --dest=net.connman "
+    LAN_TECH " net.connman.Technology.SetProperty string:Tethering variant:boolean:false >>\"$L\" 2>&1 || exit 1\n"
+    "sleep 5\n"
+    "n=0\n"
+    "while [ $n -lt 5 ]; do\n"
+    " dbus-send --system --print-reply --reply-timeout=10000 --dest=net.connman "
+    LAN_TECH " net.connman.Technology.SetProperty string:Tethering variant:boolean:true >>\"$L\" 2>&1 && exit 0\n"
+    " n=$((n+1)); sleep 2\n"
+    "done\n"
+    "exit 1\n",log);
+  struct stat st={.st_mode=0700,.st_uid=geteuid(),.st_gid=getegid()};
+  int ok=atomic_file(path,script,strlen(script),&st);
+  pid_t pid=ok?fork():-1;
+  if(pid==0) {
+    setsid();int fd=open("/dev/null",O_RDWR);
+    if(fd>=0){dup2(fd,0);dup2(fd,1);dup2(fd,2);if(fd>2)close(fd);}
+    execl("/bin/sh","sh",path,(char *)NULL);_exit(127);
+  }
+  g_free(script);return pid>0;
 }
 
 /* Probe the terminal where start.sh binds it: the saved LAN address.
@@ -731,7 +844,31 @@ done:free(address);free(mask);free(start);free(end);free(version);
 void lan_address_init(void) {
   AddressMigration m;int pending=read_migration(&m);
   if(pending==1 && (!m.same_boot || monotonic_seconds()>=m.deadline))migration_rollback(m.dir);
-  LanConfig v;if(read_live(&v)) { if(!ensure_recovery()||!web_subnet_rule(&v,1)||!nat_subnet_rule(&v,1)||!nat_recovery_rule(&v))fprintf(stderr,"LAN maintenance address/policy restore failed\n"); }
+  LanConfig persisted;
+  int reconciled=0;
+  if(pending==0&&read_persisted(&persisted)) {
+    LanConfig live;
+    if(!read_live(&live)||!same_config(&live,&persisted))reconciled=1;
+    if(reconciled&&!apply_live(&persisted))fprintf(stderr,"LAN ConnMan reconciliation failed\n");
+    if(!lan_address_present(&persisted)) {
+      reconciled=1;
+      if(!install_lan_address(&persisted))
+        fprintf(stderr,"LAN saved IPv4 could not be applied to tether\n");
+    }
+    int removed=remove_stale_lan_addresses(&persisted);
+    if(removed<0)fprintf(stderr,"LAN stale kernel address cleanup failed\n");
+    else if(removed>0)reconciled=1;
+    if(!ensure_recovery()||!web_subnet_rule(&persisted,1)||
+       !nat_subnet_rule(&persisted,1)||!nat_recovery_rule(&persisted))
+      fprintf(stderr,"LAN maintenance address/policy restore failed\n");
+    if(reconciled&&!schedule_tethering_reload())
+      fprintf(stderr,"LAN DHCP runtime reload could not be scheduled\n");
+  } else if(pending==0) {
+    LanConfig v;
+    if(read_live(&v)&&(!ensure_recovery()||!web_subnet_rule(&v,1)||
+       !nat_subnet_rule(&v,1)||!nat_recovery_rule(&v)))
+      fprintf(stderr,"LAN maintenance address/policy restore failed\n");
+  }
 }
 
 static void lan_status(struct mg_connection *c) {
@@ -753,7 +890,9 @@ static void lan_status(struct mg_connection *c) {
     json_add_int(j,"prefix",prefix); json_add_str(j,"pool_start",v.start); json_add_str(j,"pool_end",v.end);
     char *version = config_string(&v); json_add_str(j,"version",version); g_free(version);
     AddressMigration migration;int migration_state=read_migration(&migration);
-    int writable=lan_address_present(&v) && migration_state==0 && access("/run/udx710-lan.lock",F_OK)!=0;
+    int kernel_consistent=lan_kernel_consistent(&v);
+    json_add_bool(j,"kernel_consistent",kernel_consistent);
+    int writable=kernel_consistent && migration_state==0 && access("/run/udx710-lan.lock",F_OK)!=0;
     json_add_bool(j,"pool_writable",writable && dhcp_ok && !dhcp.actual);
     json_add_bool(j,"address_writable",writable && dhcp_ok && !dhcp.actual && !access(LAN_RECOVERY_HELPER,R_OK) && !access("/usr/bin/flock",X_OK) && !access("/bin/arping",X_OK));
     json_add_str(j,"recovery_address",LAN_RECOVERY_IP);

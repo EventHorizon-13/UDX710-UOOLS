@@ -109,6 +109,7 @@
     dhcpOff: 'LAN DHCP 已关闭',
     dhcpUnavailable: 'DHCP 状态异常，请刷新或检查恢复记录。',
     dhcpOffNotice: '自动分配已关闭。新连接需使用其他 DHCP 服务或手动设置地址。',
+    kernelMismatch: '保存的 LAN 地址尚未应用到 tether，系统会在启动时自动清理旧地址并重启 DHCP。',
     disableDhcpFirst: '关闭 DHCP 后可修改本机 IPv4 和地址池。',
     dhcpRestartRequired: 'LAN 配置已更改。如需重新开启 DHCP，请先重启 CW52。',
     netmask: '子网掩码', dns: '系统 DNS', poolStart: 'DHCP 起始地址', poolEnd: 'DHCP 结束地址',

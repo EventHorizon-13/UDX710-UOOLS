@@ -140,6 +140,7 @@ onUnmounted(() => clearInterval(migrationPoll))
       </div>
       <p v-if="!state.dhcp?.supported || !state.dhcp.consistent" class="dhcp-warning" role="status">{{ t('lan.dhcpUnavailable') }}</p>
       <p v-else-if="!state.dhcp.enabled" class="notice dhcp-off" role="status">{{ t('lan.dhcpOffNotice') }}</p>
+      <p v-if="state.kernel_consistent === false" class="dhcp-warning" role="alert">{{ t('lan.kernelMismatch') }}</p>
       <p v-if="state.dhcp?.enabled" class="notice dhcp-off" role="status">{{ t('lan.disableDhcpFirst') }}</p>
       <p v-if="state.dhcp?.restart_required" class="dhcp-warning" role="status">{{ t('lan.dhcpRestartRequired') }}</p>
       <div v-if="state.migration" class="migration" role="status">
