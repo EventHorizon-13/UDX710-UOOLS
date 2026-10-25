@@ -1,7 +1,16 @@
 /* Read each SIM independently. This endpoint never powers a modem or switches a SIM. */
+#ifndef CW52_SIM_SLOTS_H
+#define CW52_SIM_SLOTS_H
 #include <gio/gio.h>
+#include <stdio.h>
+#include <string.h>
+#include "mongoose.h"
+#include "http_utils.h"
+#include "json_builder.h"
 static int sim_iccid_valid(const char *s) {
-  if(!s)return 0;size_t n=strlen(s);if(n<18 || n>22)return 0;
+  if(!s)return 0;
+  size_t n=strlen(s);
+  if(n<18 || n>22)return 0;
   for(size_t i=0;i<n;i++)if(s[i]<'0'||s[i]>'9')return 0;
   return 1;
 }
@@ -32,3 +41,5 @@ static void handle_sim_slots(struct mg_connection *c,struct mg_http_message *hm)
   if(bus)g_object_unref(bus);
   json_arr_close(j);json_obj_close(j);json_obj_close(j);HTTP_OK_FREE(c,json_finish(j));
 }
+
+#endif

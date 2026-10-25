@@ -226,7 +226,8 @@ static int render_config(const char *orig,size_t n,const WifiUpdate *u,char *out
   }
   if(u->ssid_set) {
     char hex[65];size_t len=strlen(u->ssid);
-    for(size_t i=0;i<len;i++)snprintf(hex+i*2,3,"%02x",(unsigned char)u->ssid[i]);hex[len*2]=0;
+    for(size_t i=0;i<len;i++)snprintf(hex+i*2,3,"%02x",(unsigned char)u->ssid[i]);
+    hex[len*2]=0;
     snprintf(line,sizeof(line),"ssid2=%s",hex);if(append_line(out,size,&used,line))return -1;
   }
   if(u->channel_set){snprintf(line,sizeof(line),"channel=%d",u->channel);if(append_line(out,size,&used,line))return -1;}
@@ -286,7 +287,8 @@ static int wifi_configure_schema(struct mg_str body) {
   const char *names[]={"action","band","ssid","password","channel","hidden","encryption","max_clients","validate_only"};
   while((offset=mg_json_next(body,offset,&key,&val))!=0) {
     int i;for(i=0;i<9;i++)if(key.len==strlen(names[i])+2 && key.buf[0]=='"' && !memcmp(key.buf+1,names[i],key.len-2))break;
-    if(i==9 || (seen&(1u<<i)))return 0;seen|=1u<<i;
+    if(i==9 || (seen&(1u<<i)))return 0;
+    seen|=1u<<i;
     if(i==5 || i==8){if(mg_strcmp(val,mg_str("true")) && mg_strcmp(val,mg_str("false")))return 0;}
     else if(i==4 || i==7){char path[40];double num;snprintf(path,sizeof(path),"$.%s",names[i]);
       if(!mg_json_get_num(body,path,&num) || num<1 || num>165 || num!=(int)num || (i==7 && num>32))return 0;}
