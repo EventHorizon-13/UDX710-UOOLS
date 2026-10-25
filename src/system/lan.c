@@ -266,8 +266,11 @@ static int schedule_tethering_reload(void) {
     "sleep 5\n"
     "n=0\n"
     "while [ $n -lt 5 ]; do\n"
-    " dbus-send --system --print-reply --reply-timeout=10000 --dest=net.connman "
-    LAN_TECH " net.connman.Technology.SetProperty string:Tethering variant:boolean:true >>\"$L\" 2>&1 && exit 0\n"
+    " if dbus-send --system --print-reply --reply-timeout=10000 --dest=net.connman "
+    LAN_TECH " net.connman.Technology.SetProperty string:Tethering variant:boolean:true >>\"$L\" 2>&1; then\n"
+    "  sleep 3\n"
+    "  /bin/sh " LAN_RECOVERY_HELPER " >>\"$L\" 2>&1 && exit 0\n"
+    " fi\n"
     " n=$((n+1)); sleep 2\n"
     "done\n"
     "exit 1\n",log);
