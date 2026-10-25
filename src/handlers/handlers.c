@@ -1,4 +1,3 @@
-#include <unistd.h>
 ﻿/**
  * @file handlers.c
  * @brief HTTP API handlers implementation (Go: handlers)
@@ -20,6 +19,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <sys/stat.h>
 
 /* GET /api/info - 获取系统信息 */
