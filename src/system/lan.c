@@ -188,10 +188,12 @@ static int management_tcp_reachable(const char *address, unsigned short port) {
 }
 
 static int management_services_reachable(const char *lan, const char *recovery,
-                                         unsigned short web_port, unsigned short terminal_port) {
-  return management_tcp_reachable(recovery, web_port) &&
-    (management_tcp_reachable(lan, terminal_port) ||
-     (strcmp(lan, recovery) && management_tcp_reachable(recovery, terminal_port)));
+                                         unsigned short app_port, unsigned short maintenance_port) {
+  /* Address confirmation is made in the UDX app on 6677. The ttyd helper
+   * checks its own rebind separately; requiring a TCP probe to its listener
+   * here can reject a valid LAN address when it is also the recovery address. */
+  return management_tcp_reachable(lan, app_port) &&
+    management_tcp_reachable(recovery, maintenance_port);
 }
 
 #define LAN_TERMINAL_REBIND "/home/root/6677/cw52-ttyd-rebind.sh"
@@ -202,7 +204,7 @@ static int rebind_terminal(void) {
 
 static int management_reachable(const LanConfig *v) {
   return lan_address_present(v) && recovery_present() &&
-    management_services_reachable(v->address, LAN_RECOVERY_IP, 80, 7681);
+    management_services_reachable(v->address, LAN_RECOVERY_IP, 6677, 80);
 }
 
 /* Independent executable watchdog survives server exit. Recovery materials are
@@ -868,5 +870,6 @@ void handle_lan(struct mg_connection *c, struct mg_http_message *hm) {
   }
   else http_method_error(c);
 }
+
 
 
