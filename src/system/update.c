@@ -133,14 +133,16 @@ int update_check_version(const char *check_url, update_info_t *info) {
     memset(info, 0, sizeof(update_info_t));
     
     /* 优先使用curl获取版本信息，失败再用wget */
-    int ret = run_command(output, sizeof(output), "curl", "-k", "-s", "-L", check_url, NULL);
-    if (ret != 0) {
-        ret = run_command(output, sizeof(output), "wget", "--no-check-certificate", "-q", "-O", "-", check_url, NULL);
+    int ret = run_command(output, sizeof(output), "curl", "-k", "-f", "-s", "-L", "--connect-timeout", "3", "--max-time", "5", check_url, NULL);
+    if (ret == 127) {
+        ret = run_command(output, sizeof(output), "wget", "--no-check-certificate", "-T", "5", "-q", "-O", "-", check_url, NULL);
         if (ret != 0) {
             return -1;
         }
     }
     
+    if (ret != 0) return -1;
+
     /* 使用mongoose JSON API解析 */
     struct mg_str json = mg_str(output);
     
