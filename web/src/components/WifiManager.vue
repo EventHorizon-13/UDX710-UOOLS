@@ -43,7 +43,9 @@ function editConfig(band) {
     ssid: band.ssid || '',
     password: '',
     channel: Number(band.channel) || (band.interface === 'wlan1' ? 1 : 36),
-    hidden: band.hidden === true
+    hidden: band.hidden === true,
+    encryption: band.encryption || 'unsupported',
+    max_clients: band.max_clients || 32
   }
   configOpen.value[band.interface] = true
 }
@@ -53,6 +55,13 @@ async function saveConfig(band) {
   if (!draft?.ssid.trim()) {
     showError(t('wifi.ssidRequired'))
     return
+  }
+  if (!['open', 'wpa2-psk'].includes(draft.encryption)) { showError(t('wifi.chooseEncryption')); return }
+  if (draft.encryption === 'wpa2-psk' && (!band.password_set || band.encryption !== 'wpa2-psk') && !draft.password) {
+    showError(t('wifi.passwordRequired')); return
+  }
+  if (!Number.isInteger(Number(draft.max_clients)) || draft.max_clients < 1 || draft.max_clients > 32) {
+    showError(t('wifi.invalidMaxClients')); return
   }
   if (!window.confirm(t('wifi.confirmConfigure'))) return
   busyBand.value = band.interface
@@ -64,9 +73,11 @@ async function saveConfig(band) {
         action: 'configure',
         band: band.interface === 'wlan1' ? '2g' : '5g',
         ssid: draft.ssid.trim(),
-        password: draft.password,
+        password: draft.encryption === 'open' ? '' : draft.password,
         channel: Number(draft.channel),
-        hidden: draft.hidden
+        hidden: draft.hidden,
+        encryption: draft.encryption,
+        max_clients: Number(draft.max_clients)
       })
     })
     const result = await response.json()
@@ -121,9 +132,11 @@ onMounted(loadStatus)
         </header>
         <form v-if="configOpen[band.interface]" class="config-form" @submit.prevent="saveConfig(band)">
           <label>{{ t('wifi.ssid') }}<input v-model="configDraft[band.interface].ssid" required maxlength="32" autocomplete="off" /></label>
-          <label>{{ t('wifi.newPassword') }}<input v-model="configDraft[band.interface].password" type="password" minlength="8" maxlength="63" autocomplete="new-password" :placeholder="t('wifi.passwordHint')" /></label>
+          <label>{{ t('wifi.encryption') }}<select v-model="configDraft[band.interface].encryption"><option v-if="!['open', 'wpa2-psk'].includes(band.encryption)" value="unsupported" disabled>{{ t('wifi.chooseEncryption') }}</option><option value="wpa2-psk">WPA2-PSK (AES)</option><option value="open">{{ t('wifi.openNetwork') }}</option></select></label>
+          <label v-if="configDraft[band.interface].encryption === 'wpa2-psk'">{{ t('wifi.newPassword') }}<input v-model="configDraft[band.interface].password" type="password" minlength="8" maxlength="63" autocomplete="new-password" :placeholder="t('wifi.passwordHint')" /></label>
           <label>{{ t('wifi.channel') }}<select v-model.number="configDraft[band.interface].channel"><option v-for="channel in (band.interface === 'wlan1' ? channels24 : channels5)" :key="channel" :value="channel">{{ channel }}</option></select></label>
-          <label class="hidden-control"><input v-model="configDraft[band.interface].hidden" type="checkbox" />{{ t('wifi.hidden') }}</label>
+          <label>{{ t('wifi.maxClients') }}<input v-model.number="configDraft[band.interface].max_clients" type="number" min="1" max="32" step="1" required inputmode="numeric" /></label>
+          <div class="hidden-control"><span>{{ t('wifi.hidden') }}</span><button type="button" class="radio-switch" role="switch" :aria-label="band.band + ' ' + t('wifi.hidden')" :aria-checked="configDraft[band.interface].hidden" @click="configDraft[band.interface].hidden = !configDraft[band.interface].hidden"><span class="switch-thumb" /></button></div>
           <div class="form-actions"><button type="button" @click="configOpen[band.interface] = false">{{ t('common.cancel') }}</button><button type="submit" :disabled="busyBand === band.interface">{{ busyBand === band.interface ? t('common.saving') : t('wifi.saveConfig') }}</button></div>
         </form>
 
@@ -185,9 +198,10 @@ dt { color:var(--wifi-muted); } dd { min-width:0; overflow-wrap:anywhere; user-s
 .config-form label { display:grid; gap:5px; font-size:13px; min-width:0; }
 .config-form input:not([type=checkbox]), select { width:100%; min-width:0; border:1px solid rgb(148 163 184 / .4); border-radius:8px; padding:8px 10px; background:transparent; }
 :global(html.dark .wifi-page option) { background:#1e293b; }
-.config-form .hidden-control { display:flex; align-items:center; gap:8px; }
+.config-form .hidden-control { display:flex; align-items:center; justify-content:space-between; gap:12px; font-size:13px; }
 .form-actions { grid-column:1/-1; justify-content:flex-end; }
 @media (max-width:1100px) { .bands { grid-template-columns:minmax(0,1fr); } }
 @media (max-width:440px) { .wifi-card { padding:14px; } .config-form { grid-template-columns:minmax(0,1fr); } }
 @media (prefers-reduced-motion:reduce) { button, .switch-thumb { transition:none; } }
 </style>
+

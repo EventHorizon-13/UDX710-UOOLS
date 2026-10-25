@@ -27,7 +27,8 @@ static pthread_mutex_t wifi_config_mutex = PTHREAD_MUTEX_INITIALIZER;
 typedef struct {
   const char *band, *iface, *conf;
   char state[32], ssid[128], channel[16];
-  int available, hidden;
+  int available, hidden, max_clients, password_set;
+  char encryption[20];
 } WifiBand;
 
 static int run_hostapd(const char *iface, const char *command, char *out, size_t size) {
@@ -69,6 +70,22 @@ static void parse_status(WifiBand *band, const char *status) {
   }
 }
 
+static int valid_psk(const char *s) {
+  if (strlen(s)!=64) return 0;
+  for (size_t i=0;i<64;i++) if (!((s[i]>='0'&&s[i]<='9')||(s[i]>='a'&&s[i]<='f')||(s[i]>='A'&&s[i]<='F'))) return 0;
+  return 1;
+}
+static void read_security(const char *path, char mode[20], int *password_set) {
+  char wpa[24]={0},key[80]={0},pass[128]={0},psk[128]={0};
+  read_config_value(path,"wpa",wpa,sizeof(wpa));
+  read_config_value(path,"wpa_key_mgmt",key,sizeof(key));
+  read_config_value(path,"wpa_passphrase",pass,sizeof(pass));
+  read_config_value(path,"wpa_psk",psk,sizeof(psk));
+  snprintf(mode,20,"%s",!strcmp(wpa,"0") || !wpa[0] ? "open" :
+    (!strcmp(wpa,"2") && !strcmp(key,"WPA-PSK") ? "wpa2-psk" : "unsupported"));
+  *password_set=(strlen(pass)>=8 && strlen(pass)<=63) || valid_psk(psk);
+}
+
 static int read_band(WifiBand *band) {
   char status[4096] = {0}, hidden[32] = {0};
   band->available = 0;
@@ -76,6 +93,9 @@ static int read_band(WifiBand *band) {
   parse_status(band, status);
   if (!band->state[0]) return -1;
   band->hidden = !read_config_value(band->conf, "ignore_broadcast_ssid", hidden, sizeof(hidden)) && atoi(hidden) != 0;
+  char maximum[24]={0};
+  read_security(band->conf,band->encryption,&band->password_set);
+  band->max_clients=!read_config_value(band->conf,"max_num_sta",maximum,sizeof(maximum)) ? atoi(maximum) : 0;
   band->available = 1;
   return 0;
 }
@@ -87,6 +107,10 @@ static void add_band_json(JsonBuilder *j, const WifiBand *band) {
   json_add_bool(j, "available", band->available);
   json_add_bool(j, "enabled", !strcmp(band->state, "ENABLED"));
   json_add_bool(j, "hidden", band->hidden);
+  json_add_str(j,"encryption",band->encryption);
+  json_add_int(j,"max_clients",band->max_clients);
+  json_add_int(j,"max_clients_limit",32);
+  json_add_bool(j,"password_set",band->password_set);
   json_add_str(j, "state", band->state);
   json_add_str(j, "ssid", band->ssid);
   json_add_str(j, "channel", band->channel);
@@ -163,64 +187,77 @@ static int replace_file(const char *path, const char *buf, size_t n, mode_t mode
   ok = fsync(fd) == 0; close(fd); return ok ? 0 : -1;
 }
 
-static int patch_config(const char *path, const char *ssid, const char *password,
-                        int channel, int hidden, int cs, int cp, int cc, int ch) {
-  FILE *fp = fopen(path, "r");
-  if (!fp) return -1;
-  struct stat st;
-  if (fstat(fileno(fp), &st) || fseek(fp, 0, SEEK_END)) { fclose(fp); return -1; }
-  long sz = ftell(fp);
-  if (sz < 0 || sz >= CONF_LIMIT || fseek(fp, 0, SEEK_SET)) { fclose(fp); return -1; }
-  char orig[CONF_LIMIT], rollback[CONF_LIMIT], out[CONF_LIMIT];
-  size_t got = fread(orig, 1, (size_t)sz, fp);
-  fclose(fp);
-  if (got != (size_t)sz) return -1;
-  memcpy(rollback, orig, got);
-  orig[got] = '\0';
+typedef struct {
+  const char *ssid,*password,*encryption;
+  int channel,hidden,max_clients;
+  int ssid_set,password_set,channel_set,hidden_set,encryption_set,max_set;
+} WifiUpdate;
 
-  int ws = 0, wp = 0, wc = 0, wh = 0;
-  size_t used = 0;
-  char *save = NULL;
-  for (char *line = strtok_r(orig, "\n", &save); line; line = strtok_r(NULL, "\n", &save)) {
-    char *eq = strchr(line, '=');
-    size_t k = eq && line[0] != '#' ? (size_t)(eq - line) : 0;
-    int is_ssid = eq && ((k == 4 && !strncmp(line, "ssid", 4)) || (k == 5 && !strncmp(line, "ssid2", 5)));
-    int is_pass = eq && k == 14 && !strncmp(line, "wpa_passphrase", 14);
-    int is_channel = eq && k == 7 && !strncmp(line, "channel", 7);
-    int is_hidden = eq && k == 21 && !strncmp(line, "ignore_broadcast_ssid", 21);
-    char repl[128];
-    const char *chosen = line;
-    if (is_ssid && cs) {
-      if (ws) continue;
-      size_t n = strlen(ssid); char hex[65];
-      for (size_t i = 0; i < n; i++) snprintf(hex + i * 2, 3, "%02x", (unsigned char)ssid[i]);
-      hex[n * 2] = '\0'; snprintf(repl, sizeof(repl), "ssid2=%s", hex); chosen = repl; ws = 1;
-    } else if (is_pass && cp) {
-      if (wp) continue;
-      snprintf(repl, sizeof(repl), "wpa_passphrase=%s", password); chosen = repl; wp = 1;
-    } else if (is_channel && cc) {
-      if (wc) continue;
-      snprintf(repl, sizeof(repl), "channel=%d", channel); chosen = repl; wc = 1;
-    } else if (is_hidden && ch) {
-      if (wh) continue;
-      snprintf(repl, sizeof(repl), "ignore_broadcast_ssid=%d", hidden ? 1 : 0); chosen = repl; wh = 1;
+static int append_line(char *out,size_t size,size_t *used,const char *line) {
+  size_t n=strlen(line);
+  if(*used+n+2>=size)return -1;
+  memcpy(out+*used,line,n);*used+=n;out[(*used)++]='\n';out[*used]=0;return 0;
+}
+static int key_is(const char *line,const char *key) {
+  size_t n=strlen(key);return !strncmp(line,key,n) && line[n]=='=';
+}
+static int security_key(const char *line) {
+  const char *keys[]={"wpa","wpa_key_mgmt","wpa_pairwise","rsn_pairwise","auth_algs","wpa_passphrase","wpa_psk","sae_password","ieee80211w"};
+  for(size_t i=0;i<sizeof(keys)/sizeof(keys[0]);i++)if(key_is(line,keys[i]))return 1;
+  return 0;
+}
+/* Build a complete candidate without writing the original or exposing secrets. */
+static int render_config(const char *orig,size_t n,const WifiUpdate *u,char *out,size_t size) {
+  if(n>=CONF_LIMIT || memchr(orig,0,n))return -1;
+  char input[CONF_LIMIT],line[180],saved_pass[128]={0},saved_psk[128]={0};
+  memcpy(input,orig,n);input[n]=0;size_t used=0;out[0]=0;
+  char *save=NULL;
+  for(char *p=strtok_r(input,"\n",&save);p;p=strtok_r(NULL,"\n",&save)) {
+    p[strcspn(p,"\r")]=0;
+    if(key_is(p,"wpa_passphrase"))snprintf(saved_pass,sizeof(saved_pass),"%s",strchr(p,'=')+1);
+    if(key_is(p,"wpa_psk"))snprintf(saved_psk,sizeof(saved_psk),"%s",strchr(p,'=')+1);
+    if((u->ssid_set && (key_is(p,"ssid") || key_is(p,"ssid2"))) ||
+       (u->channel_set && key_is(p,"channel")) ||
+       (u->hidden_set && key_is(p,"ignore_broadcast_ssid")) ||
+       (u->max_set && key_is(p,"max_num_sta")) ||
+       (u->encryption_set && security_key(p)) ||
+       (u->password_set && (key_is(p,"wpa_passphrase") || key_is(p,"wpa_psk")))) continue;
+    if(append_line(out,size,&used,p))return -1;
+  }
+  if(u->ssid_set) {
+    char hex[65];size_t len=strlen(u->ssid);
+    for(size_t i=0;i<len;i++)snprintf(hex+i*2,3,"%02x",(unsigned char)u->ssid[i]);hex[len*2]=0;
+    snprintf(line,sizeof(line),"ssid2=%s",hex);if(append_line(out,size,&used,line))return -1;
+  }
+  if(u->channel_set){snprintf(line,sizeof(line),"channel=%d",u->channel);if(append_line(out,size,&used,line))return -1;}
+  if(u->hidden_set){snprintf(line,sizeof(line),"ignore_broadcast_ssid=%d",!!u->hidden);if(append_line(out,size,&used,line))return -1;}
+  if(u->max_set){snprintf(line,sizeof(line),"max_num_sta=%d",u->max_clients);if(append_line(out,size,&used,line))return -1;}
+  if(u->encryption_set) {
+    if(append_line(out,size,&used,"auth_algs=1"))return -1;
+    if(!strcmp(u->encryption,"open")) {
+      if(append_line(out,size,&used,"wpa=0") || append_line(out,size,&used,"ieee80211w=0"))return -1;
+    } else {
+      if(append_line(out,size,&used,"wpa=2") || append_line(out,size,&used,"wpa_key_mgmt=WPA-PSK") ||
+         append_line(out,size,&used,"rsn_pairwise=CCMP") || append_line(out,size,&used,"ieee80211w=0"))return -1;
+      const char *pass=u->password_set?u->password:saved_pass;
+      if(valid_password(pass))snprintf(line,sizeof(line),"wpa_passphrase=%s",pass);
+      else if(!u->password_set && valid_psk(saved_psk))snprintf(line,sizeof(line),"wpa_psk=%s",saved_psk);
+      else return -1;
+      if(append_line(out,size,&used,line))return -1;
     }
-    size_t n = strlen(chosen);
-    if (used + n + 2 >= sizeof(out)) return -1;
-    memcpy(out + used, chosen, n); used += n; out[used++] = '\n';
+  } else if(u->password_set) {
+    snprintf(line,sizeof(line),"wpa_passphrase=%s",u->password);if(append_line(out,size,&used,line))return -1;
   }
-  if (cs && !ws) {
-    size_t n = strlen(ssid); char hex[65];
-    for (size_t i = 0; i < n; i++) snprintf(hex + i * 2, 3, "%02x", (unsigned char)ssid[i]);
-    hex[n * 2] = '\0';
-    int m = snprintf(out + used, sizeof(out) - used, "ssid2=%s\n", hex);
-    if (m < 0 || (size_t)m >= sizeof(out) - used) return -1;
-    used += (size_t)m;
-  }
-  if (cp && !wp) { int m = snprintf(out + used, sizeof(out) - used, "wpa_passphrase=%s\n", password); if (m < 0 || (size_t)m >= sizeof(out) - used) return -1; used += (size_t)m; }
-  if (cc && !wc) { int m = snprintf(out + used, sizeof(out) - used, "channel=%d\n", channel); if (m < 0 || (size_t)m >= sizeof(out) - used) return -1; used += (size_t)m; }
-  if (ch && !wh) { int m = snprintf(out + used, sizeof(out) - used, "ignore_broadcast_ssid=%d\n", hidden ? 1 : 0); if (m < 0 || (size_t)m >= sizeof(out) - used) return -1; used += (size_t)m; }
-
+  return (int)used;
+}
+static int patch_config(const char *path,const WifiUpdate *u) {
+  FILE *fp=fopen(path,"r");if(!fp)return -1;
+  struct stat st;char rollback[CONF_LIMIT],out[CONF_LIMIT];
+  if(fstat(fileno(fp),&st)){fclose(fp);return -1;}
+  size_t got=fread(rollback,1,sizeof(rollback),fp);int bad=ferror(fp);fclose(fp);
+  if(bad || got>=CONF_LIMIT)return -1;
+  int n=render_config(rollback,got,u,out,sizeof(out));if(n<0)return -1;
+  size_t used=(size_t)n;
   char backup[256];
   if (snprintf(backup, sizeof(backup), "%s.6677.bak", path) >= (int)sizeof(backup)) return -1;
   if (replace_file(backup, rollback, got, st.st_mode & 0777, st.st_uid, st.st_gid)) return -1;
@@ -242,7 +279,27 @@ static int restore_config(const char *path, mode_t mode, uid_t uid, gid_t gid) {
   return bad ? -1 : replace_file(path, buf, n, mode, uid, gid);
 }
 
+static int wifi_configure_schema(struct mg_str body) {
+  int root_len=0;
+  if(body.len<2 || body.len>2048 || mg_json_get(body,"$",&root_len)!=0 || (size_t)root_len!=body.len || body.buf[0]!='{')return 0;
+  struct mg_str key,val;size_t offset=0;unsigned seen=0;
+  const char *names[]={"action","band","ssid","password","channel","hidden","encryption","max_clients","validate_only"};
+  while((offset=mg_json_next(body,offset,&key,&val))!=0) {
+    int i;for(i=0;i<9;i++)if(key.len==strlen(names[i])+2 && key.buf[0]=='"' && !memcmp(key.buf+1,names[i],key.len-2))break;
+    if(i==9 || (seen&(1u<<i)))return 0;seen|=1u<<i;
+    if(i==5 || i==8){if(mg_strcmp(val,mg_str("true")) && mg_strcmp(val,mg_str("false")))return 0;}
+    else if(i==4 || i==7){char path[40];double num;snprintf(path,sizeof(path),"$.%s",names[i]);
+      if(!mg_json_get_num(body,path,&num) || num<1 || num>165 || num!=(int)num || (i==7 && num>32))return 0;}
+    else if(val.len<2 || val.buf[0]!='"' || val.buf[val.len-1]!='"')return 0;
+  }
+  return (seen&3u)==3u;
+}
+
 static void handle_wifi_configure(struct mg_connection *c, struct mg_http_message *hm) {
+  if(!wifi_configure_schema(hm->body)){HTTP_ERROR(c,400,"invalid WiFi field, value type, or duplicate field");return;}
+  char *encryption=mg_json_get_str(hm->body,"$.encryption");
+  double maxnum=0;int change_max=mg_json_get_num(hm->body,"$.max_clients",&maxnum);
+  bool validate_only=false;mg_json_get_bool(hm->body,"$.validate_only",&validate_only);
   char *band = mg_json_get_str(hm->body, "$.band");
   char *ssid = mg_json_get_str(hm->body, "$.ssid");
   char *password = mg_json_get_str(hm->body, "$.password");
@@ -259,7 +316,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
 
   pthread_mutex_lock(&wifi_config_mutex);
   if (!band || (strcmp(band, "2g") && strcmp(band, "5g")) ||
-      (!change_ssid && !change_password && !change_channel && !change_hidden)) {
+      (!change_ssid && !change_password && !change_channel && !change_hidden && !encryption && !change_max)) {
     HTTP_ERROR(c, 400, "invalid WiFi configuration request");
     goto done;
   }
@@ -270,6 +327,12 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
     goto done;
   }
 
+  if(encryption && strcmp(encryption,"open") && strcmp(encryption,"wpa2-psk")) {
+    HTTP_ERROR(c,400,"encryption must be open or wpa2-psk");goto done;
+  }
+  if(encryption && !strcmp(encryption,"open") && change_password) {
+    HTTP_ERROR(c,400,"open WiFi does not use a password");goto done;
+  }
   iface = !strcmp(band, "2g") ? "wlan1" : "wlan0";
   conf = !strcmp(band, "2g") ? CONF_2G : CONF_5G;
   if (stat(conf, &st)) { HTTP_ERROR(c, 500, "hostapd configuration is unavailable"); goto done; }
@@ -277,11 +340,22 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
     HTTP_ERROR(c,503,"hostapd state unavailable; configuration was not changed"); goto done;
   }
   was_enabled = strstr(output,"state=ENABLED") != NULL;
-  if (patch_config(conf, ssid ? ssid : "", password ? password : "",
-                   (int)chnum, hidden_value, change_ssid, change_password,
-                   change_channel, change_hidden)) {
-    HTTP_ERROR(c, 500, "failed to update hostapd configuration; recovery copy retained");
-    goto done;
+  char current_security[20];int password_available=0;
+  read_security(conf,current_security,&password_available);
+  const char *target=encryption?encryption:current_security;
+  if(!strcmp(target,"wpa2-psk") && !change_password &&
+     (!password_available || strcmp(current_security,"wpa2-psk"))) {
+    HTTP_ERROR(c,400,"a new WPA2 password is required");goto done;
+  }
+  if(change_password && strcmp(target,"wpa2-psk")) {
+    HTTP_ERROR(c,400,"select WPA2-PSK before setting a password");goto done;
+  }
+  if(validate_only) {HTTP_OK(c,"{\"Code\":0,\"Error\":\"\",\"Data\":\"WiFi configuration is valid; no changes applied\"}");goto done;}
+  WifiUpdate update={.ssid=ssid,.password=password,.encryption=encryption,.channel=(int)chnum,
+    .hidden=hidden_value,.max_clients=(int)maxnum,.ssid_set=change_ssid,.password_set=change_password,
+    .channel_set=change_channel,.hidden_set=change_hidden,.encryption_set=encryption!=NULL,.max_set=change_max};
+  if (patch_config(conf,&update)) {
+    HTTP_ERROR(c,500,"failed to update hostapd configuration; recovery copy retained");goto done;
   }
 
   if (was_enabled) {
@@ -294,6 +368,17 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
         parse_status(&actual,output);
         verified = !strcmp(actual.state,"ENABLED") && (!change_ssid || !strcmp(actual.ssid,ssid)) &&
           (!change_channel || atoi(actual.channel)==(int)chnum);
+      }
+      if(verified && (change_hidden || change_max)) {
+        char value[32]={0};
+        if(change_hidden)verified=!read_config_value(conf,"ignore_broadcast_ssid",value,sizeof(value)) && atoi(value)==(int)hidden_value;
+        if(verified && change_max)verified=!read_config_value(conf,"max_num_sta",value,sizeof(value)) && atoi(value)==(int)maxnum;
+      }
+      if(verified && encryption) {
+        char live[2048]={0};
+        verified=!run_hostapd(iface,"get_config",live,sizeof(live));
+        if(verified)verified=strstr(live,!strcmp(encryption,"open")?"wpa=0":"wpa=2")!=NULL;
+        if(verified && !strcmp(encryption,"wpa2-psk"))verified=strstr(live,"key_mgmt=WPA-PSK")!=NULL;
       }
       if (verified) break;
       sleep(1);
@@ -313,7 +398,7 @@ static void handle_wifi_configure(struct mg_connection *c, struct mg_http_messag
 
 done:
   pthread_mutex_unlock(&wifi_config_mutex);
-  free(band); free(ssid); free(password);
+  free(band); free(ssid); free(password);free(encryption);
 }
 
 static void handle_wifi_control(struct mg_connection *c, struct mg_http_message *hm) {
@@ -348,3 +433,4 @@ void handle_wifi(struct mg_connection *c, struct mg_http_message *hm) {
     free(action);
   } else http_method_error(c);
 }
+

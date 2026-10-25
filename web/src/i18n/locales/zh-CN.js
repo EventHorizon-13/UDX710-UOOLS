@@ -77,6 +77,8 @@
   },
 
   wifi: {
+    encryption: '加密方式', openNetwork: '无加密', maxClients: '最大连接数',
+    chooseEncryption: '请选择加密方式', passwordRequired: '启用 WPA2-PSK 需要设置密码', invalidMaxClients: '最大连接数须为 1–32 的整数',
     hostname: '主机名', clientWarning: '部分本地数据不可用',
     band24: '2.4 GHz', band5: '5 GHz', enabled: '已开启', disabled: '已关闭',
     channel: '信道', clients: '在线终端', noClients: '当前没有在线终端',
@@ -171,6 +173,7 @@
 
   // 网络管理模块
   network: {
+    simAbsent: '未插卡', iccidUnavailable: '暂不可读取',
     airplaneMode: '飞行模式',
     airplaneModeDesc: '关闭所有无线连接',
     airplaneModeOn: '飞行模式已开启',

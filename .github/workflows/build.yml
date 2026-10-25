@@ -21,7 +21,7 @@ jobs:
       - name: Test CW52 validation and client records (runner only)
         run: |
           set -euo pipefail
-          for test in lan wifi_clients lan_address; do
+          for test in lan wifi_clients lan_address wifi_config sim_slots; do
             gcc -std=gnu11 -Wall -Wextra -Wno-unused-function -g -fsanitize=address,undefined \
               -ffunction-sections -fdata-sections -Wl,--gc-sections \
               -Isrc -Isrc/include/lib -Isrc/include/system \
@@ -107,4 +107,5 @@ jobs:
         with:
           name: udx710-tools
           path: output
+
 

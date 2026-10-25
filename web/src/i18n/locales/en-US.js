@@ -77,6 +77,8 @@ export default {
   },
 
   wifi: {
+    encryption: 'Security', openNetwork: 'Open', maxClients: 'Maximum clients',
+    chooseEncryption: 'Choose a security mode', passwordRequired: 'Set a password to enable WPA2-PSK', invalidMaxClients: 'Maximum clients must be an integer from 1 to 32',
     hostname: 'Hostname', clientWarning: 'Some local sources are unavailable',
     band24: '2.4 GHz', band5: '5 GHz', enabled: 'Enabled', disabled: 'Disabled',
     channel: 'Channel', clients: 'Connected clients', noClients: 'No connected clients',
@@ -171,6 +173,7 @@ export default {
 
   // Network
   network: {
+    simAbsent: 'No SIM', iccidUnavailable: 'Unavailable',
     airplaneMode: 'Airplane Mode',
     airplaneModeDesc: 'Disable all wireless connections',
     airplaneModeOn: 'Airplane mode enabled',

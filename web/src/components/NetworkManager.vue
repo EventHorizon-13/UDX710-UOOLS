@@ -1,7 +1,7 @@
 <script setup>
-import { inject, ref, watch, onMounted } from 'vue'
+import { inject, ref, watch, onMounted, onUnmounted } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { toggleAirplaneMode, setNetworkMode, switchSlot, getDataStatus, setDataStatus, getRoamingStatus, setRoamingAllowed } from '../composables/useApi'
+import { authFetch, toggleAirplaneMode, setNetworkMode, switchSlot, getDataStatus, setDataStatus, getRoamingStatus, setRoamingAllowed } from '../composables/useApi'
 import { useToast } from '../composables/useToast'
 
 const { t } = useI18n()
@@ -13,6 +13,28 @@ const airplaneMode = ref(false)
 const selectedNetworkMode = ref('')
 const currentSlot = ref('slot1')
 const saving = ref(false)
+const simSlots = ref({})
+let slotsPoll
+let slotsRequest = 0
+let slotsStopped = false
+async function fetchSimSlots() {
+  const request = ++slotsRequest
+  try {
+    const response = await authFetch('/api/sim/slots')
+    const result = await response.json()
+    if (!response.ok || result.Code !== 0) throw new Error('SIM information unavailable')
+    if (!slotsStopped && request === slotsRequest) simSlots.value = Object.fromEntries((result.Data?.slots || []).map(slot => [slot.slot, slot]))
+  } catch (_) {
+    if (!slotsStopped && request === slotsRequest) simSlots.value = {}
+  }
+}
+function slotIccid(slot) {
+  const info = simSlots.value[slot]
+  if (info?.iccid) return info.iccid
+  return t(info?.status === 'absent' ? 'network.simAbsent' : 'network.iccidUnavailable')
+}
+onMounted(() => { fetchSimSlots(); slotsPoll = window.setInterval(fetchSimSlots, 15000) })
+onUnmounted(() => { slotsStopped = true; clearInterval(slotsPoll) })
 
 // 数据连接和漫游状态
 const dataActive = ref(false)
@@ -67,6 +89,7 @@ async function handleSlotSwitch(slot) {
     await switchSlot(slot)
     currentSlot.value = slot
     success(t('network.slotSwitched'))
+    await fetchSimSlots()
   } catch (err) {
     error(t('network.switchFailed'))
   } finally {
@@ -269,6 +292,7 @@ onMounted(() => {
                 <i class="fas fa-check-circle text-green-400"></i>
               </div>
             </div>
+            <p class="sim-iccid mt-3 text-sm text-slate-600 dark:text-white/60" @click.stop>ICCID <span class="font-mono select-text">{{ slotIccid('slot1') }}</span></p>
             <div v-if="currentSlot === 'slot1'" class="mt-3 pt-3 border-t border-slate-200 dark:border-white/10">
               <p class="text-slate-500 dark:text-white/50 text-sm">{{ t('monitor.signalStrength') }}: <span class="text-green-600 dark:text-green-400 font-medium">{{ systemInfo?.signal_strength ?? 'N/A' }}</span></p>
             </div>
@@ -298,6 +322,7 @@ onMounted(() => {
                 <i class="fas fa-check-circle text-green-400"></i>
               </div>
             </div>
+            <p class="sim-iccid mt-3 text-sm text-slate-600 dark:text-white/60" @click.stop>ICCID <span class="font-mono select-text">{{ slotIccid('slot2') }}</span></p>
             <div v-if="currentSlot === 'slot2'" class="mt-3 pt-3 border-t border-slate-200 dark:border-white/10">
               <p class="text-slate-500 dark:text-white/50 text-sm">{{ t('monitor.signalStrength') }}: <span class="text-green-600 dark:text-green-400 font-medium">{{ systemInfo?.signal_strength ?? 'N/A' }}</span></p>
             </div>
@@ -308,3 +333,9 @@ onMounted(() => {
 
   </div>
 </template>
+
+
+<style scoped>
+.sim-iccid { display:flex; flex-wrap:wrap; gap:4px 10px; overflow-wrap:anywhere; cursor:text; }
+.sim-iccid span { min-width:0; word-break:break-all; }
+</style>

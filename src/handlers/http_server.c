@@ -121,6 +121,7 @@ static int verify_request_token(struct mg_http_message *hm) {
 }
 
 #include "terminal_proxy.h"
+#include "sim_slots.h"
 
 /* HTTP 事件处理函数 */
 static void http_handler(struct mg_connection *c, int ev, void *ev_data) {
@@ -166,7 +167,9 @@ static void http_handler(struct mg_connection *c, int ev, void *ev_data) {
     }
 
     /* API 路由 */
-    if (mg_match(hm->uri, mg_str("/api/wifi"), NULL)) {
+    if (mg_match(hm->uri, mg_str("/api/sim/slots"), NULL)) {
+      handle_sim_slots(c, hm);
+    } else if (mg_match(hm->uri, mg_str("/api/wifi"), NULL)) {
       handle_wifi(c, hm);
     } else if (mg_match(hm->uri, mg_str("/api/lan"), NULL)) {
       handle_lan(c, hm);
@@ -567,4 +570,5 @@ void http_server_run(void) {
     }
   }
 }
+
 
