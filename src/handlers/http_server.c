@@ -4,6 +4,7 @@
  */
 
 #include "http_server.h"
+#include "startup_trace.h"
 #include "advanced.h"
 #include "apn.h"
 #include "auth.h"
@@ -476,50 +477,61 @@ int http_server_start(const char *port) {
   char listen_addr[64];
 
   /* 初始化 D-Bus */
+  startup_trace("dbus proxy");
   if (init_dbus() != 0) {
     printf("警告: D-Bus 初始化失败 (高级网络功能将不可用)\n");
   }
 
   /* 初始化流量统计 */
+  startup_trace("traffic init");
   init_traffic();
 
   /* 初始化充电控制 */
+  startup_trace("charge init");
   init_charge();
 
   /* 初始化短信模块（必须在auth_init之前，因为auth依赖数据库） */
+  startup_trace("sms init");
   if (sms_init("6677.db") != 0) {
     printf("警告: 短信模块初始化失败\n");
   }
 
   /* 初始化认证模块 */
+  startup_trace("auth init");
   if (auth_init() != 0) {
     printf("警告: 认证模块初始化失败\n");
   }
 
   /* 初始化APN模块 */
+  startup_trace("apn init");
   if (apn_init("6677.db") != 0) {
     printf("警告: APN模块初始化失败\n");
   }
 
   /* 初始化Rathole模块 */
+  startup_trace("rathole init");
   if (rathole_init("6677.db") != 0) {
     printf("警告: Rathole模块初始化失败\n");
   }
 
   /* 初始化手机壳模式模块 */
+  startup_trace("phone case init");
   phone_case_init();
 
   /* 初始化IPv6代理模块 */
+  startup_trace("ipv6 proxy init");
   if (ipv6_proxy_init("6677.db") != 0) {
     printf("警告: IPv6代理模块初始化失败\n");
   }
 
   /* 初始化密保模块 */
+  startup_trace("security init");
   if (security_init() != 0) {
     printf("警告: 密保模块初始化失败\n");
   }
 
   /* 初始化 mongoose */
+  startup_trace("mongoose init");
   mg_mgr_init(&g_mgr);
 
   /* 构建监听地址 - 使用 0.0.0.0 监听所有IPv4地址 */
